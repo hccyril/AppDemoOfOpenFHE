@@ -1,0 +1,60 @@
+﻿1. 创建子模块
+•	git submodule add --depth 1 https://github.com/openfheorg/openfhe-development third_party/openfhe
+•	git submodule update --init --recursive
+•	git add .gitmodules third_party/openfhe
+•	git commit -m "Add OpenFHE as submodule"
+
+2. （可选）防止误推送到上游
+•	cd third_party/openfhe
+•	git remote set-url --push origin DISABLED
+•	cd ../..
+
+WSL下编译并安装openfhe
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_UNITTESTS=OFF -DBUILD_BENCHMARKS=OFF -DCMAKE_INSTALL_PREFIX=$HOME/openfhe-install
+cmake --build build -j 
+cmake --install build
+
+在 WSL 下编译与运行项目
+•	配置与构建
+•	cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOpenFHE_DIR=$HOME/openfhe-install/lib/OpenFHE
+•	cmake --build build -j
+•	运行
+•	动态库方式需要库路径：
+•	export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
+•	执行：
+•	./build/AppDemoOpenFHE
+可选安装并用 rpath 运行（便于打包）
+•	安装你的可执行到 bin（已在 CMakeLists.txt 加了 install 规则）：
+•	cmake --install build --prefix "$PWD/out"
+•	将 OpenFHE 的 lib 拷贝到 out/lib，然后直接运行：
+•	mkdir -p out/lib && cp -a $HOME/openfhe-install/lib/.so out/lib/
+•	./out/bin/AppDemoOpenFHE 这样无需设置 LD_LIBRARY_PATH。
+
+•	请先确认这些路径存在：
+ls $HOME/openfhe-install/include/openfhe/core/utils/debug.h
+ls $HOME/openfhe-install/include/openfhe/pke/openfhe.h
+ls $HOME/openfhe-install/lib/libOPENFHEcore.so
+ls $HOME/openfhe-install/lib/libOPENFHEpke.so
+
+WSL 下重新构建与运行
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+•	运行：
+•	./build/AppDemoOpenFHE 如仍提示找不到 .so，再导出一次：
+•	export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
+•	./build/AppDemoOpenFHE
+如果头文件仍报不存在，发给我上述 ls 命令的结果；我再针对你的安装树调整 include 前缀或 CMake include 路径。
+
+最后成功：
+修改了CMakeList，添加openfhe的地址
+ - cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+ - cmake --build build -j
+运行：
+ - export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
+ - ./build/AppDemoOpenFHE
+
+总结
+（前置）安装WSL，apt install必要的工具
+（1）创建仓库，创建submodule
+（2）构建openfhe
+（3）构建自己的项目

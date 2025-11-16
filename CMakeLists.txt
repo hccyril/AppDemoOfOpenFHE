@@ -1,37 +1,59 @@
 ﻿# CMakeList.txt: AppDemoOpenFHE 的 CMake 项目，在此处包括源代码并定义
 # 项目特定的逻辑。
 #
-cmake_minimum_required (VERSION 3.8)
-
-# 如果支持，请为 MSVC 编译器启用热重载。
-if (POLICY CMP0141)
-  cmake_policy(SET CMP0141 NEW)
-  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
-endif()
+cmake_minimum_required (VERSION 3.16)
 
 project (AppDemoOpenFHE LANGUAGES CXX)
+
+# C++ 版本
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# 在 WSL 下，默认使用固定安装路径（如未显式传入 OpenFHE_DIR）
+if(NOT OpenFHE_DIR)
+  set(OpenFHE_DIR "$ENV{HOME}/openfhe-install/lib/OpenFHE")
+endif()
+
+# 查找 OpenFHE 包（用于链接库）
+find_package(OpenFHE CONFIG REQUIRED)
+
+# OpenMP（可选，加速并去除忽略 omp pragma 的告警）
+find_package(OpenMP)
 
 # 将源代码添加到此项目的可执行文件。
 add_executable (AppDemoOpenFHE "AppDemoOpenFHE.cpp" "AppDemoOpenFHE.h")
 
-# C++20 标准
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# 显式添加已安装 OpenFHE 的头文件搜索路径，并标记为 SYSTEM 抑制三方警告
+# 需要同时包含模块根目录，使其内部相对包含（如 "utils/..."、"key/..."）可解析
+target_include_directories(AppDemoOpenFHE SYSTEM PRIVATE 
+  "$ENV{HOME}/openfhe-install/include/openfhe"
+  "$ENV{HOME}/openfhe-install/include/openfhe/core"
+  "$ENV{HOME}/openfhe-install/include/openfhe/pke"
+  "$ENV{HOME}/openfhe-install/include/openfhe/binfhe"
+)
 
-# 首选：查找已安装的 OpenFHE 包（Windows 无 WSL 可行）
-# 配置时提供 OpenFHE_DIR 或 CMAKE_PREFIX_PATH 指向 OpenFHE 安装目录。
-# 例如：-DOpenFHE_DIR="C:/deps/openfhe-install/lib/cmake/OpenFHE"
-find_package(OpenFHE CONFIG REQUIRED)
+# 链接 OpenFHE 库目标
+target_link_libraries(AppDemoOpenFHE PRIVATE OPENFHEpke OPENFHEcore)
 
-# 链接 OpenFHE 的 PKE 模块（示例所需）
-target_link_libraries(AppDemoOpenFHE PRIVATE OpenFHE::pke)
-
-# 编译器警告与定义
-if (MSVC)
-  target_compile_options(AppDemoOpenFHE PRIVATE /W4 /permissive-)
-  target_compile_definitions(AppDemoOpenFHE PRIVATE _CRT_SECURE_NO_WARNINGS)
-else()
-  target_compile_options(AppDemoOpenFHE PRIVATE -Wall -Wextra -Wpedantic)
+# 如找到 OpenMP，则链接启用（GCC/Clang 会自动加 -fopenmp）
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(AppDemoOpenFHE PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
-# TODO: 如有需要，请添加测试并安装目标。
+# 编译器警告与定义（仅对本项目源文件生效，三方头因 SYSTEM 不会刷屏）
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(AppDemoOpenFHE PRIVATE -Wall -Wextra -Wpedantic)
+elseif (MSVC)
+  target_compile_options(AppDemoOpenFHE PRIVATE /W4 /permissive-)
+  target_compile_definitions(AppDemoOpenFHE PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
+# 运行期库搜索路径：构建目录可直接运行
+set(CMAKE_BUILD_RPATH "$ENV{HOME}/openfhe-install/lib")
+
+# 可选：设置 rpath 以在二进制文件旁边找到 lib（如果稍后安装两者）
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+set_target_properties(AppDemoOpenFHE PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
+
+# 安装规则（可选）
+install(TARGETS AppDemoOpenFHE RUNTIME DESTINATION bin)
