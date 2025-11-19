@@ -135,3 +135,59 @@ Result of 3 homomorphic multiplications:
 (2, 4, 27, 64, 125, 216, 343, 512, 729, 1000, 1331, 1728, ... )
 all done!
 Press 0 and enter to exit: 0
+
+
+## 2025/11/19
+
+前几次失败的具体原因与修复要点如下：
+•	直接访问私有成员
+•	症状: 访问 StdLatticeParm::StandardLatticeParmSets 报 “is private within this context”。
+•	原因: 该静态向量在头文件中是 private。
+•	修复: 改为用公开 API StdLatticeParm::FindMaxQ(dist, sec, ringDim) 组合枚举，不再直接访问私有容器。
+•	参数生成失败（RingDim 不满足安全要求）
+•	症状: GenCryptoContext failed: Ring dimension XXXX ... does not meet the security requirement
+•	原因: 手动设置了 SetRingDim(r)，但该 ringDim/安全级别/深度/明文模数 组合不满足 BFVrns 的安全/参数约束。标准表中的 StdLatticeParm 是“安全级别 vs logQ”的规范值，不等于 BFVrns 参数生成器对任意 ptm/depth 的可行组合。
+•	修复:
+•	移除 SetRingDim，让 OpenFHE 自动选择 ring dimension。
+•	将 ptm 调整为较小（如 65537），降低门槛；必要时减少 depth。
+•	仅将 FindMaxQ 作为参考输出，不作为强制输入。
+•	错误的 API 假设
+•	症状: “‘GetMultiplicativeDepth’ has no member named …”
+•	原因: 对象类型为 CryptoParametersBase，不包含 GetMultiplicativeDepth()。
+•	修复: 去掉对实际深度的查询与打印，仅打印请求的 reqDepth。
+•	头文件包含路径不一致
+•	症状: “cannot open include file: pke/openfhe.h / core/utils/debug.h / lattice/stdlatticeparms.h”
+•	原因:
+•	一度切换为错误/不统一的包含前缀（如 <openfhe/...> 或 openfhe.h），与安装树不匹配。
+•	或 CMake 的 target_include_directories 没有指向正确的根（应指向 $HOME/openfhe-install/include/openfhe 及其子目录）。
+•	修复:
+•	恢复并统一包含为:
+•	#include "pke/openfhe.h"
+•	#include "core/utils/debug.h"
+•	#include "lattice/stdlatticeparms.h"
+•	确认包含目录:
+•	$HOME/openfhe-install/include/openfhe
+•	$HOME/openfhe-install/include/openfhe/core
+•	$HOME/openfhe-install/include/openfhe/pke
+•	$HOME/openfhe-install/include/openfhe/binfhe
+•	验证文件存在:
+•	ls $HOME/openfhe-install/include/openfhe/pke/openfhe.h
+•	ls $HOME/openfhe-install/include/openfhe/core/utils/debug.h
+•	ls $HOME/openfhe-install/include/openfhe/core/lattice/stdlatticeparms.h
+•	CMake 配置定位包失败
+•	症状: find_package(OpenFHE CONFIG REQUIRED) 失败。
+•	原因: 未安装 CMake package 配置或 OpenFHE_DIR 未指到 $HOME/openfhe-install/lib/OpenFHE。
+•	修复:
+•	改为使用 OPENFHE_PREFIX + find_library(OPENFHEcore / OPENFHEpke) 直接链接，避免对 find_package 的硬依赖。
+•	或在使用 find_package 时指定 -DOpenFHE_DIR=$HOME/openfhe-install/lib/OpenFHE。
+•	其它小问题
+•	Ms(TimeVar&) 未使用参数的告警（无功能影响）。
+•	运行期库路径需设置 LD_LIBRARY_PATH 或使用安装+rpath 方式。
+建议写入总结的实践准则：
+•	不直接访问 OpenFHE 的私有静态容器；优先使用公开查询 API（如 FindMaxQ）。
+•	BFVrns 参数生成优先让库自动选取 ring dimension；避免手动设 SetRingDim 与随意的 ptm/depth 组合。
+•	统一头文件包含路径与安装树；如需变更，只改 CMake 包含目录，不改源码里的 include 前缀。
+•	若使用 find_package(OpenFHE)，务必提供正确的 OpenFHE_DIR；否则用 find_library 基于安装前缀链接。
+•	运行时如需 .so，确保 LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH 或使用 rpath 安装。
+
+
