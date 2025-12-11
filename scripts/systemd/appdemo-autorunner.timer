@@ -3,7 +3,7 @@ Description=Timer for AutoRunner (every 15 minutes)
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=15min
+OnUnitActiveSec=5min
 AccuracySec=1min
 Persistent=true
 
