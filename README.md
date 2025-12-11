@@ -1,62 +1,62 @@
 # AppDemoOpenFHE
 
-Ê¹ÓÃ OpenFHE ¿âµÄÊ¾ÀıÓ¦ÓÃ£¨BFVrns ³Ë·¨ÑİÊ¾£©¡£±¾ÊÖ²áº­¸Ç£º»·¾³×¼±¸¡¢»ñÈ¡Ô´Âë¡¢¹¹½¨ÓëÔËĞĞ¡¢´ò°ü·Ö·¢ÒÔ¼°³£¼ûÎÊÌâÅÅ²é¡£
+ä½¿ç”¨ OpenFHE åº“çš„ç¤ºä¾‹åº”ç”¨ï¼ˆBFVrns ä¹˜æ³•æ¼”ç¤ºï¼‰ã€‚æœ¬æ‰‹å†Œæ¶µç›–ï¼šç¯å¢ƒå‡†å¤‡ã€è·å–æºç ã€æ„å»ºä¸è¿è¡Œã€æ‰“åŒ…åˆ†å‘ä»¥åŠå¸¸è§é—®é¢˜æ’æŸ¥ã€‚
 
 ---
-## 1. »·¾³ÓëÇ°ÖÃÌõ¼ş
-### 1.1 WSL °²×°£¨½¨Òé Ubuntu 20.04+/22.04£©
-Windows PowerShell£º
+## 1. ç¯å¢ƒä¸å‰ç½®æ¡ä»¶
+### 1.1 WSL å®‰è£…ï¼ˆå»ºè®® Ubuntu 20.04+/22.04ï¼‰
+Windows PowerShellï¼š
 ```powershell
 wsl --install -d Ubuntu
 ```
-¸üĞÂÓë»ù±¾¹¹½¨¹¤¾ß£º
+æ›´æ–°ä¸åŸºæœ¬æ„å»ºå·¥å…·ï¼š
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y build-essential cmake ninja-build git pkg-config
 ```
-¿ÉÑ¡£¨ĞÔÄÜ²¢ĞĞÖ§³Ö£©£º
+å¯é€‰ï¼ˆæ€§èƒ½å¹¶è¡Œæ”¯æŒï¼‰ï¼š
 ```bash
 sudo apt install -y libomp-dev
 ```
-### 1.2 Ä¿Â¼¹æ»®
-¼ÙÉè¹¤×÷Ä¿Â¼£º`$HOME` ÏÂ»ò¹ÒÔØÅÌ `/mnt/d/.../AppDemoOpenFHE`¡£
-OpenFHE °²×°Ç°×ºÍ³Ò»Îª£º`$HOME/openfhe-install`¡£
+### 1.2 ç›®å½•è§„åˆ’
+å‡è®¾å·¥ä½œç›®å½•ï¼š`$HOME` ä¸‹æˆ–æŒ‚è½½ç›˜ `/mnt/d/.../AppDemoOpenFHE`ã€‚
+OpenFHE å®‰è£…å‰ç¼€ç»Ÿä¸€ä¸ºï¼š`$HOME/openfhe-install`ã€‚
 
 ---
-## 2. »ñÈ¡±¾²Ö¿âÓëÌí¼Ó×ÓÄ£¿é
+## 2. è·å–æœ¬ä»“åº“ä¸æ·»åŠ å­æ¨¡å—
 ```bash
-# ¿ËÂ¡±¾ÏîÄ¿£¨ÈôÒÑ´æÔÚ¿ÉÌø¹ı£©
+# å…‹éš†æœ¬é¡¹ç›®ï¼ˆè‹¥å·²å­˜åœ¨å¯è·³è¿‡ï¼‰
 git clone <YOUR_REPO_URL> AppDemoOpenFHE
 cd AppDemoOpenFHE
 
-# Ìí¼Ó OpenFHE ×÷ÎªÇ³¿ËÂ¡×ÓÄ£¿é£¨Ö»ĞèÖ÷·ÖÖ§×î½üÒ»´ÎÌá½»£©
+# æ·»åŠ  OpenFHE ä½œä¸ºæµ…å…‹éš†å­æ¨¡å—ï¼ˆåªéœ€ä¸»åˆ†æ”¯æœ€è¿‘ä¸€æ¬¡æäº¤ï¼‰
 git submodule add --depth 1 https://github.com/openfheorg/openfhe-development third_party/openfhe
 
-# ³õÊ¼»¯²¢¸üĞÂµİ¹é×ÓÄ£¿é
+# åˆå§‹åŒ–å¹¶æ›´æ–°é€’å½’å­æ¨¡å—
 git submodule update --init --recursive
 
-# ¼ÇÂ¼µ½°æ±¾¿â
+# è®°å½•åˆ°ç‰ˆæœ¬åº“
 git add .gitmodules third_party/openfhe
 git commit -m "Add OpenFHE as submodule"
 ```
-¿ÉÑ¡£º½ûÖ¹ÎóÏòÉÏÓÎÍÆËÍ£¨±£»¤ÉÏÓÎ²Ö¿â£©£º
+å¯é€‰ï¼šç¦æ­¢è¯¯å‘ä¸Šæ¸¸æ¨é€ï¼ˆä¿æŠ¤ä¸Šæ¸¸ä»“åº“ï¼‰ï¼š
 ```bash
 cd third_party/openfhe
 git remote set-url --push origin DISABLED
 cd ../..
 ```
 
-ËµÃ÷£º
-- ×ÓÄ£¿éÔ´Âë½öÓÃÓÚ²Î¿¼»ò¶ş´Î¿ª·¢£¬²»Ö±½Ó±»µ±Ç° CMake ÓÃÓÚÁ´½Ó£¨ÑİÊ¾²ÉÓÃ¡°ÒÑ°²×°¡±µÄ OpenFHE£©¡£
-- ÈôÏ£ÍûÖ±½Ó´Ó×ÓÄ£¿é¹¹½¨¶ø²»°²×°£¬¿ÉĞŞ¸Ä±¾ÏîÄ¿ `CMakeLists.txt`£¬½« include/link Ö¸Ïò×ÓÄ£¿é¹¹½¨²úÎï£¬ÕâÀï²»Õ¹¿ª¡£
+è¯´æ˜ï¼š
+- å­æ¨¡å—æºç ä»…ç”¨äºå‚è€ƒæˆ–äºŒæ¬¡å¼€å‘ï¼Œä¸ç›´æ¥è¢«å½“å‰ CMake ç”¨äºé“¾æ¥ï¼ˆæ¼”ç¤ºé‡‡ç”¨â€œå·²å®‰è£…â€çš„ OpenFHEï¼‰ã€‚
+- è‹¥å¸Œæœ›ç›´æ¥ä»å­æ¨¡å—æ„å»ºè€Œä¸å®‰è£…ï¼Œå¯ä¿®æ”¹æœ¬é¡¹ç›® `CMakeLists.txt`ï¼Œå°† include/link æŒ‡å‘å­æ¨¡å—æ„å»ºäº§ç‰©ï¼Œè¿™é‡Œä¸å±•å¼€ã€‚
 
 ---
-## 3. ¹¹½¨²¢°²×° OpenFHE£¨ÔÚ WSL ÄÚ£©
-½øÈë×ÓÄ£¿éÄ¿Â¼£º
+## 3. æ„å»ºå¹¶å®‰è£… OpenFHEï¼ˆåœ¨ WSL å†…ï¼‰
+è¿›å…¥å­æ¨¡å—ç›®å½•ï¼š
 ```bash
 cd third_party/openfhe
 ```
-ÅäÖÃ£¨¹Ø±ÕÊ¾Àı¡¢µ¥Ôª²âÊÔÓë»ù×¼£¬Release Ä£Ê½£©£º
+é…ç½®ï¼ˆå…³é—­ç¤ºä¾‹ã€å•å…ƒæµ‹è¯•ä¸åŸºå‡†ï¼ŒRelease æ¨¡å¼ï¼‰ï¼š
 ```bash
 cmake -S . -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
@@ -65,80 +65,80 @@ cmake -S . -B build -G Ninja \
   -DBUILD_BENCHMARKS=OFF \
   -DCMAKE_INSTALL_PREFIX=$HOME/openfhe-install
 ```
-±àÒëÓë°²×°£º
+ç¼–è¯‘ä¸å®‰è£…ï¼š
 ```bash
 cmake --build build -j
 cmake --install build
 ```
-ÑéÖ¤¹Ø¼üÎÄ¼ş£º
+éªŒè¯å…³é”®æ–‡ä»¶ï¼š
 ```bash
 ls $HOME/openfhe-install/include/openfhe/pke/openfhe.h
 ls $HOME/openfhe-install/include/openfhe/core/utils/debug.h
 ls $HOME/openfhe-install/lib/libOPENFHEcore.so
 ls $HOME/openfhe-install/lib/libOPENFHEpke.so
 ```
-·µ»Øµ½ÏîÄ¿¸ùÄ¿Â¼£º
+è¿”å›åˆ°é¡¹ç›®æ ¹ç›®å½•ï¼š
 ```bash
 cd ../../
 ```
 
 ---
-## 4. ¹¹½¨Ê¾ÀıÓ¦ÓÃ
-ÅäÖÃ£º
+## 4. æ„å»ºç¤ºä¾‹åº”ç”¨
+é…ç½®ï¼š
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOpenFHE_DIR=$HOME/openfhe-install/lib/OpenFHE
 ```
-¹¹½¨£º
+æ„å»ºï¼š
 ```bash
 cmake --build build -j
 ```
-ÔËĞĞÇ°ÉèÖÃ¶¯Ì¬¿âÂ·¾¶£¨ÈôÎ´Ê¹ÓÃ´ò°ü rpath£©£º
+è¿è¡Œå‰è®¾ç½®åŠ¨æ€åº“è·¯å¾„ï¼ˆè‹¥æœªä½¿ç”¨æ‰“åŒ… rpathï¼‰ï¼š
 ```bash
 export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
 ./build/AppDemoOpenFHE
 ```
-½»»¥£º³ÌĞòÄ©Î²»áÒªÇóÊäÈëÒ»¸öÊı×Ö½áÊø¡£
+äº¤äº’ï¼šç¨‹åºæœ«å°¾ä¼šè¦æ±‚è¾“å…¥ä¸€ä¸ªæ•°å­—ç»“æŸã€‚
 
 ---
-## 5. ´ò°üÓë°²×°£¨¿ÉÑ¡·Ö·¢·½Ê½£©
-°²×°µ±Ç°Ó¦ÓÃµ½×Ô¶¨ÒåÇ°×º£º
+## 5. æ‰“åŒ…ä¸å®‰è£…ï¼ˆå¯é€‰åˆ†å‘æ–¹å¼ï¼‰
+å®‰è£…å½“å‰åº”ç”¨åˆ°è‡ªå®šä¹‰å‰ç¼€ï¼š
 ```bash
 cmake --install build --prefix "$PWD/out"
 ```
-¿½±´ OpenFHE ¹²Ïí¿â£º
+æ‹·è´ OpenFHE å…±äº«åº“ï¼š
 ```bash
 mkdir -p out/lib
 cp -a $HOME/openfhe-install/lib/libOPENFHE*.so out/lib/
 ```
-ÔËĞĞ£¨ÓÉ°²×°Ê±ÉèÖÃµÄ rpath Ö§³Ö£¬ÎŞĞèÔÙÉè LD_LIBRARY_PATH£©£º
+è¿è¡Œï¼ˆç”±å®‰è£…æ—¶è®¾ç½®çš„ rpath æ”¯æŒï¼Œæ— éœ€å†è®¾ LD_LIBRARY_PATHï¼‰ï¼š
 ```bash
 ./out/bin/AppDemoOpenFHE
 ```
 
 ---
-## 6. ³£¼ûÎÊÌâÓëÅÅ²é
-### 6.1 Í·ÎÄ¼şÕÒ²»µ½
-Ö¢×´£º`fatal error: core/utils/debug.h: No such file or directory`¡£
-ÅÅ²é£ºÈ·ÈÏÒÑ°²×°²¢Ê¹ÓÃ°²×°°æÂ·¾¶£»²é¿´£º
+## 6. å¸¸è§é—®é¢˜ä¸æ’æŸ¥
+### 6.1 å¤´æ–‡ä»¶æ‰¾ä¸åˆ°
+ç—‡çŠ¶ï¼š`fatal error: core/utils/debug.h: No such file or directory`ã€‚
+æ’æŸ¥ï¼šç¡®è®¤å·²å®‰è£…å¹¶ä½¿ç”¨å®‰è£…ç‰ˆè·¯å¾„ï¼›æŸ¥çœ‹ï¼š
 ```bash
 ls $HOME/openfhe-install/include/openfhe/core/utils/debug.h
 ```
-È·±£ `CMakeLists.txt` ÖĞÊ¹ÓÃ `target_include_directories(... $HOME/openfhe-install/include/openfhe ...)`¡£
+ç¡®ä¿ `CMakeLists.txt` ä¸­ä½¿ç”¨ `target_include_directories(... $HOME/openfhe-install/include/openfhe ...)`ã€‚
 
-### 6.2 Á´½ÓÊ§°Ü»ò¿âÎ´ÕÒµ½
-Ö¢×´£ºÔËĞĞÊ±±¨ `libOPENFHEcore.so: cannot open shared object file`¡£
-½â¾ö£º
+### 6.2 é“¾æ¥å¤±è´¥æˆ–åº“æœªæ‰¾åˆ°
+ç—‡çŠ¶ï¼šè¿è¡Œæ—¶æŠ¥ `libOPENFHEcore.so: cannot open shared object file`ã€‚
+è§£å†³ï¼š
 ```bash
 export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
 ```
-»òÊ¹ÓÃ°²×°´ò°ü·½Ê½ + rpath¡£
+æˆ–ä½¿ç”¨å®‰è£…æ‰“åŒ…æ–¹å¼ + rpathã€‚
 
-### 6.3 ´óÁ¿Èı·½¿â¾¯¸æË¢ÆÁ
-Ô­Òò£ºOpenFHE Í·ÎÄ¼şº¬´óÁ¿Î´Ê¹ÓÃ²ÎÊı¡¢OpenMP pragma¡£ÔÚ±¾ÏîÄ¿ÖĞ½«Æä±ê¼ÇÎª `SYSTEM` Ä¿Â¼¼´¿É¼õÉÙ¾¯¸æ£»ÈôĞèÒªÆôÓÃ²¢ĞĞ°²×° `libomp-dev` ²¢ÖØĞÂÅäÖÃ£¨ÒÑÔÚ `CMakeLists.txt` ×Ô¶¯¼ì²â£©¡£
+### 6.3 å¤§é‡ä¸‰æ–¹åº“è­¦å‘Šåˆ·å±
+åŸå› ï¼šOpenFHE å¤´æ–‡ä»¶å«å¤§é‡æœªä½¿ç”¨å‚æ•°ã€OpenMP pragmaã€‚åœ¨æœ¬é¡¹ç›®ä¸­å°†å…¶æ ‡è®°ä¸º `SYSTEM` ç›®å½•å³å¯å‡å°‘è­¦å‘Šï¼›è‹¥éœ€è¦å¯ç”¨å¹¶è¡Œå®‰è£… `libomp-dev` å¹¶é‡æ–°é…ç½®ï¼ˆå·²åœ¨ `CMakeLists.txt` è‡ªåŠ¨æ£€æµ‹ï¼‰ã€‚
 
-### 6.4 OpenMP pragma ±»ºöÂÔ
-±íÏÖ£º`warning: ignoring '#pragma omp ...'`¡£
-½â¾ö£º°²×° OpenMP Ö§³Ö¿âºóÖØĞÂ CMake£º
+### 6.4 OpenMP pragma è¢«å¿½ç•¥
+è¡¨ç°ï¼š`warning: ignoring '#pragma omp ...'`ã€‚
+è§£å†³ï¼šå®‰è£… OpenMP æ”¯æŒåº“åé‡æ–° CMakeï¼š
 ```bash
 sudo apt install -y libomp-dev
 rm -rf build
@@ -146,7 +146,7 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOpenFHE_DIR=$HOME/open
 cmake --build build -j
 ```
 
-### 6.5 ¸üĞÂ×ÓÄ£¿éµ½×îĞÂÉÏÓÎ
+### 6.5 æ›´æ–°å­æ¨¡å—åˆ°æœ€æ–°ä¸Šæ¸¸
 ```bash
 cd third_party/openfhe
 git fetch --depth 1 origin main
@@ -156,41 +156,41 @@ cd ../..
 git add third_party/openfhe
 git commit -m "Update OpenFHE submodule"
 ```
-ÖØĞÂÖ´ĞĞµÚ 3¡¢4 ²½¹¹½¨¡£
+é‡æ–°æ‰§è¡Œç¬¬ 3ã€4 æ­¥æ„å»ºã€‚
 
-### 6.6 ÖØĞÂÍêÈ«ÇåÀí¹¹½¨
+### 6.6 é‡æ–°å®Œå…¨æ¸…ç†æ„å»º
 ```bash
 rm -rf build out
 find third_party/openfhe -maxdepth 1 -name build -type d -exec rm -rf {} +
 ```
-È»ºóÖØ¸´ÅäÖÃÓë±àÒë¡£
+ç„¶åé‡å¤é…ç½®ä¸ç¼–è¯‘ã€‚
 
 ---
-## 7. ÒÑ°²×° vs ×ÓÄ£¿éÔ´ÂëµÄÇø±ğÓëÓÃ·¨
-- ÒÑ°²×°°æ±¾£ºÍ¨¹ı `cmake --install` Éú³ÉµÄ±ê×¼Ç°×º½á¹¹£¨`include/openfhe/...` Óë `lib/libOPENFHE*.so`£©£¬ÑİÊ¾ÖĞÈ«²¿ÒıÓÃ°²×°Â·¾¶¼õĞ¡ñîºÏ¡£
-- ×ÓÄ£¿éÔ´Âë£º±£Áô¹©ÔÄ¶Á/µ÷ÊÔ/¶¨ÖÆ¡£ÈôĞèÒªÖ±½Ó¿ª·¢²¢µ÷ÊÔ OpenFHE£¬¿ÉÔÚÆä `build` Ä¿Â¼Ê¹ÓÃ `cmake --build` ²¢ÔÚÖ÷ÏîÄ¿ÖĞ¸ÄÎªÖ¸Ïò¸Ã¹¹½¨Ä¿Â¼µÄ `include` Óë `lib`¡£
-- ÍÆ¼ö£ºÉú²ú»òÑİÊ¾³¡¾°Ê¹ÓÃ°²×°°æ£»ÑĞ¾¿¿ª·¢¿ÉÖ±½ÓÁ´½ÓÔ´Âë¹¹½¨²úÎï¡£
+## 7. å·²å®‰è£… vs å­æ¨¡å—æºç çš„åŒºåˆ«ä¸ç”¨æ³•
+- å·²å®‰è£…ç‰ˆæœ¬ï¼šé€šè¿‡ `cmake --install` ç”Ÿæˆçš„æ ‡å‡†å‰ç¼€ç»“æ„ï¼ˆ`include/openfhe/...` ä¸ `lib/libOPENFHE*.so`ï¼‰ï¼Œæ¼”ç¤ºä¸­å…¨éƒ¨å¼•ç”¨å®‰è£…è·¯å¾„å‡å°è€¦åˆã€‚
+- å­æ¨¡å—æºç ï¼šä¿ç•™ä¾›é˜…è¯»/è°ƒè¯•/å®šåˆ¶ã€‚è‹¥éœ€è¦ç›´æ¥å¼€å‘å¹¶è°ƒè¯• OpenFHEï¼Œå¯åœ¨å…¶ `build` ç›®å½•ä½¿ç”¨ `cmake --build` å¹¶åœ¨ä¸»é¡¹ç›®ä¸­æ”¹ä¸ºæŒ‡å‘è¯¥æ„å»ºç›®å½•çš„ `include` ä¸ `lib`ã€‚
+- æ¨èï¼šç”Ÿäº§æˆ–æ¼”ç¤ºåœºæ™¯ä½¿ç”¨å®‰è£…ç‰ˆï¼›ç ”ç©¶å¼€å‘å¯ç›´æ¥é“¾æ¥æºç æ„å»ºäº§ç‰©ã€‚
 
 ---
-## 8. Ä¿Â¼½á¹¹¼òÒª£¨¹Ø¼ü£©
+## 8. ç›®å½•ç»“æ„ç®€è¦ï¼ˆå…³é”®ï¼‰
 ```
 AppDemoOpenFHE/
-  CMakeLists.txt          # ÏîÄ¿¹¹½¨½Å±¾
-  AppDemoOpenFHE.cpp      # Ê¾ÀıÖ÷³ÌĞò
+  CMakeLists.txt          # é¡¹ç›®æ„å»ºè„šæœ¬
+  AppDemoOpenFHE.cpp      # ç¤ºä¾‹ä¸»ç¨‹åº
   AppDemoOpenFHE.h
-  Manual.txt              # ¼òÒª±Ê¼Ç£¨Ô­Ê¼²Ù×÷¼ÇÂ¼£©
-  third_party/openfhe/    # OpenFHE ×ÓÄ£¿éÔ´Âë
-  build/                  # £¨Éú³É£©ÏîÄ¿¹¹½¨Ä¿Â¼
-  out/                    # £¨¿ÉÑ¡Éú³É£©°²×°/´ò°üÊä³ö
+  Manual.txt              # ç®€è¦ç¬”è®°ï¼ˆåŸå§‹æ“ä½œè®°å½•ï¼‰
+  third_party/openfhe/    # OpenFHE å­æ¨¡å—æºç 
+  build/                  # ï¼ˆç”Ÿæˆï¼‰é¡¹ç›®æ„å»ºç›®å½•
+  out/                    # ï¼ˆå¯é€‰ç”Ÿæˆï¼‰å®‰è£…/æ‰“åŒ…è¾“å‡º
 ```
 
 ---
-## 9. ¿ìËÙÃüÁî»ã×Ü£¨TL;DR£©
+## 9. å¿«é€Ÿå‘½ä»¤æ±‡æ€»ï¼ˆTL;DRï¼‰
 ```bash
-# °²×°ÒÀÀµ£¨Ê×´Î£©
+# å®‰è£…ä¾èµ–ï¼ˆé¦–æ¬¡ï¼‰
 sudo apt install -y build-essential cmake ninja-build git libomp-dev
 
-# ¹¹½¨ & °²×° OpenFHE
+# æ„å»º & å®‰è£… OpenFHE
 cd third_party/openfhe
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_EXAMPLES=OFF -DBUILD_UNITTESTS=OFF -DBUILD_BENCHMARKS=OFF \
@@ -199,17 +199,17 @@ cmake --build build -j
 cmake --install build
 cd ../../
 
-# ¹¹½¨Ó¦ÓÃ
+# æ„å»ºåº”ç”¨
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOpenFHE_DIR=$HOME/openfhe-install/lib/OpenFHE
 cmake --build build -j
 
-# ÔËĞĞ
+# è¿è¡Œ
 export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
 ./build/AppDemoOpenFHE
 ```
 
 ---
-## 10. Ğí¿ÉÖ¤
-±¾ÑİÊ¾´úÂë±£³ÖÓë OpenFHE ¼æÈİµÄ¿ªÔ´Ê¹ÓÃ·½Ê½£¨Çë²ÎÔÄÉÏÓÎ OpenFHE ²Ö¿âµÄ LICENSE£©¡£
+## 10. è®¸å¯è¯
+æœ¬æ¼”ç¤ºä»£ç ä¿æŒä¸ OpenFHE å…¼å®¹çš„å¼€æºä½¿ç”¨æ–¹å¼ï¼ˆè¯·å‚é˜…ä¸Šæ¸¸ OpenFHE ä»“åº“çš„ LICENSEï¼‰ã€‚
 
-ÈôĞè½øÒ»²½¹¦ÄÜ£¨ÃÜÔ¿ÇĞ»»¡¢Galois Ğı×ª¡¢CKKS Ö§³ÖµÈ£©£¬Çë²Î¿¼ OpenFHE ¹Ù·½ÎÄµµÓëÊ¾Àı
+è‹¥éœ€è¿›ä¸€æ­¥åŠŸèƒ½ï¼ˆå¯†é’¥åˆ‡æ¢ã€Galois æ—‹è½¬ã€CKKS æ”¯æŒç­‰ï¼‰ï¼Œè¯·å‚è€ƒ OpenFHE å®˜æ–¹æ–‡æ¡£ä¸ç¤ºä¾‹
