@@ -1,0 +1,17 @@
+[Unit]
+Description=AutoRunner for AppDemoOpenFHE (fetch, build, run, collect logs, push)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 请将 WorkingDirectory 设置为你的仓库绝对路径
+WorkingDirectory=/srv/AppDemoOpenFHE
+# 使用环境变量传递 REPO_PATH（也可直接靠 WorkingDirectory）
+Environment=REPO_PATH=/srv/AppDemoOpenFHE
+ExecStart=/usr/bin/bash -lc 'scripts/autorunner.sh'
+# 若需要 SSH agent/特定用户环境，可改为调用 wrapper（如 /usr/bin/env -i bash -lc ...）
+# 可选：为避免执行策略差异，确保用户有权访问目录与 SSH 私钥
+
+[Install]
+WantedBy=multi-user.target

@@ -5,8 +5,9 @@ void runtest1();
 void runtest2();
 
 int main() {
-    std::cout << "Enter test id (1 or 2): ";
-    int t; if(!(std::cin >> t)) { std::cerr << "Invalid input" << std::endl; return 1; }
+    //std::cout << "Enter test id (1 or 2): ";
+    //int t; if(!(std::cin >> t)) { std::cerr << "Invalid input" << std::endl; return 1; }
+    int t = 2;
     if (t == 1) {
         runtest1();
     } else if (t == 2) {
