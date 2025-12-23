@@ -1,30 +1,28 @@
 #!/usr/bin/env bash
-# AutoRunner（彻底隔离版）
-# 需求点实现：
-# 1) 分离两个工作区：
-#    - “脚本工作区”：当前仓库所在目录（REPO_PATH），用于扫描 workplan、收集日志（result）、记录状态（scripts/state.json）
-#    - “代码工作区”：默认 $HOME/runner/AppDemoOfOpenFHE，每次执行前强制删除并重新 git clone，避免本地未提交改动导致 pull 失败
-# 2) 每次执行：
-#    - 在代码工作区重新克隆仓库（可配置分支）
-#    - 从脚本工作区的 workplan 中筛选“上次执行时间”之后新增的排期文件（若无记录，默认“当前时间的1小时前”）
-#    - 在代码工作区按 README 执行编译 + 运行（调用代码工作区里的 workplan/run.sh，参数为脚本工作区的排期文件路径）
-#    - 日志在脚本工作区的 result 目录生成，同时复制一份到代码工作区的 result
-#    - 在代码工作区执行 git add/commit/push，把 result 推送到 GitHub
+# AutoRunner（代码工作区与脚本工作区分离版）
+# 工作流：
+# 1) 总是先“强制重新克隆”代码工作区（保证最新版本）
+# 2) 在“代码工作区”的 workplan 中检查是否有“上次执行时间”以来新增的排期文件（文件名形如 YYYYMMDD_HHMM.txt）
+#    - 若不存在“上次执行时间”，默认设置成“当前时间一小时前”
+# 3) 对每个新增排期：在代码工作区执行编译+运行（调用代码工作区的 workplan/run.sh）
+# 4) 日志与结果文件首先写入“脚本工作区”的 result 目录，然后复制一份到“代码工作区”的 result 目录
+# 5) 在“代码工作区”执行 git add/commit/push（仅提交 result 下的结果）
 #
-# 可选配置（环境变量）：
-# - REPO_PATH          脚本工作区根目录，默认当前目录
-# - SCRIPT_WORKPLAN_DIR    脚本工作区的排期文件目录，默认 REPO_PATH/workplan
-# - SCRIPT_RESULT_DIR      脚本工作区的结果目录，默认 REPO_PATH/result
-# - STATE_FILE             脚本工作区的状态文件，默认 REPO_PATH/scripts/state.json
-# - CODE_WORKSPACE         代码工作区的根目录，默认 $HOME/runner
-# - CODE_REPO_URL          要克隆的仓库地址（默认从脚本工作区的 origin 获取；失败则使用 git@github.com:hccyril/AppDemoOfOpenFHE.git）
-# - CODE_BRANCH            要克隆的分支，默认 main
-# - GIT_USER_NAME          在代码工作区提交使用的用户名（避免 GH007，可配合 GIT_USER_EMAIL）
-# - GIT_USER_EMAIL         在代码工作区提交使用的邮箱（建议使用 GitHub noreply 邮箱）
+# 可配置环境变量：
+# - REPO_PATH              脚本工作区根目录（默认当前目录）
+# - SCRIPT_WORKPLAN_DIR    脚本工作区的排期目录（默认 $REPO_PATH/workplan，仅用于存放本地排期，不在此处扫描）
+# - SCRIPT_RESULT_DIR      脚本工作区的结果目录（默认 $REPO_PATH/result）
+# - STATE_FILE             状态文件（默认 $REPO_PATH/scripts/state.json），仅用于记录 lastExecutionTime
+# - CODE_WORKSPACE         代码工作区根目录（默认 $HOME/runner）
+# - CODE_REPO_URL          克隆用的仓库地址（默认读取脚本工作区 origin；失败回退到 git@github.com:hccyril/AppDemoOfOpenFHE.git）
+# - CODE_BRANCH            克隆分支（默认 main）
+# - GIT_USER_NAME          代码工作区提交用户名（避免 GH007）
+# - GIT_USER_EMAIL         代码工作区提交邮箱（建议使用 GitHub noreply 邮箱）
+# - FETCH_TIMEOUT_SEC      网络操作的超时时间（默认 60）
 
 set -euo pipefail
 
-# -------- 配置与路径 --------
+# -------- 基本配置 --------
 REPO_PATH="${REPO_PATH:-$PWD}"
 
 SCRIPT_WORKPLAN_DIR="${SCRIPT_WORKPLAN_DIR:-$REPO_PATH/workplan}"
@@ -34,10 +32,8 @@ STATE_FILE="${STATE_FILE:-$REPO_PATH/scripts/state.json}"
 CODE_WORKSPACE="${CODE_WORKSPACE:-$HOME/runner}"
 CODE_REPO_DIR="${CODE_WORKSPACE}/AppDemoOfOpenFHE"
 
-# 从脚本工作区仓库读取远程 URL（优先使用已有 origin）
 DEFAULT_REPO_URL="git@github.com:hccyril/AppDemoOfOpenFHE.git"
-CODE_REPO_URL="${CODE_REPO_URL:-$(git -C "$REPO_PATH" config --get remote.origin.url || echo "$DEFAULT_REPO_URL")}"
-
+CODE_REPO_URL="${CODE_REPO_URL:-$(git -C "$REPO_PATH" config --get remote.origin.url 2>/dev/null || echo "$DEFAULT_REPO_URL")}"
 CODE_BRANCH="${CODE_BRANCH:-main}"
 
 FETCH_TIMEOUT_SEC="${FETCH_TIMEOUT_SEC:-60}"
@@ -54,8 +50,8 @@ fi
 # -------- 目录准备 --------
 mkdir -p "$SCRIPT_WORKPLAN_DIR" "$SCRIPT_RESULT_DIR" "$(dirname "$STATE_FILE")" "$CODE_WORKSPACE"
 
-# -------- 状态读取：lastExecutionTime（秒）--------
-# 若不存在，默认设为当前时间的 1 小时前
+# -------- 读取 lastExecutionTime（秒）--------
+# 若不存在，默认设置为“当前时间 - 3600 秒”
 LAST_EXEC_TS=""
 if [[ -f "$STATE_FILE" ]]; then
   if [[ "$USE_JQ" -eq 1 ]]; then
@@ -66,11 +62,11 @@ if [[ -f "$STATE_FILE" ]]; then
 fi
 if [[ -z "$LAST_EXEC_TS" || "$LAST_EXEC_TS" == "null" ]]; then
   LAST_EXEC_TS="$(date +%s)"
-  LAST_EXEC_TS="$((LAST_EXEC_TS - 3600))"  # 默认回退一小时
+  LAST_EXEC_TS="$((LAST_EXEC_TS - 3600))"
 fi
 
-# -------- 工具函数：从计划文件名解析时间戳 --------
-# 计划文件名格式：YYYYMMDD_HHMM.txt
+# -------- 将排期文件名转换为时间戳 --------
+# 期望格式：YYYYMMDD_HHMM.txt
 plan_name_to_epoch() {
   local name="$1"
   if [[ "$name" =~ ^([0-9]{8})_([0-9]{4})\.txt$ ]]; then
@@ -83,35 +79,9 @@ plan_name_to_epoch() {
   fi
 }
 
-# -------- 扫描“新增排期文件” --------
-mapfile -d '' PLAN_FILES_ALL < <(find "$SCRIPT_WORKPLAN_DIR" -maxdepth 1 -type f -name "*.txt" -print0 | sort -z)
-
-NEW_PLANS=()
-for pf in "${PLAN_FILES_ALL[@]}"; do
-  [[ -z "${pf:-}" ]] && continue
-  local_name="$(basename "$pf")"
-  ts="$(plan_name_to_epoch "$local_name")"
-  if [[ "$ts" -gt "$LAST_EXEC_TS" ]]; then
-    NEW_PLANS+=("$pf")
-  fi
-done
-
-if [[ "${#NEW_PLANS[@]}" -eq 0 ]]; then
-  echo "[$(log_ts)] No new workplan to process since last execution time: $LAST_EXEC_TS"
-  # 更新状态为当前时间，以便下次只处理之后新增的计划
-  NEW_LAST_EXEC_TS="$(date +%s)"
-  if [[ "$USE_JQ" -eq 1 ]]; then
-    jq -n --argjson ts "$NEW_LAST_EXEC_TS" '{lastExecutionTime: $ts}' > "$STATE_FILE"
-  else
-    printf '{"lastExecutionTime":%s}\n' "$NEW_LAST_EXEC_TS" > "$STATE_FILE"
-  fi
-  exit 0
-fi
-
-echo "[$(log_ts)] Found ${#NEW_PLANS[@]} new workplan(s) to process."
-
-# -------- 准备代码工作区：强制重新克隆 --------
 echo "[$(log_ts)] Preparing code workspace: $CODE_REPO_DIR (branch: $CODE_BRANCH)"
+
+# -------- 强制重新克隆代码工作区（始终保证最新）--------
 if [[ -d "$CODE_REPO_DIR" ]]; then
   echo "[$(log_ts)] Removing existing code repo directory..."
   rm -rf "$CODE_REPO_DIR"
@@ -123,27 +93,68 @@ timeout "${FETCH_TIMEOUT_SEC}" git clone --branch "$CODE_BRANCH" "$CODE_REPO_URL
   exit 1
 }
 
-# 初始化子模块（按你的 README）
+# 初始化子模块（按 README）
 if [[ -f "$CODE_REPO_DIR/.gitmodules" ]]; then
   echo "[$(log_ts)] Initializing submodules..."
   git -C "$CODE_REPO_DIR" submodule update --init --recursive || echo "[$(log_ts)] Submodule init failed, continuing..."
 fi
 
-# 配置代码工作区的提交身份（避免 GH007 邮箱隐私问题）
+# 配置提交身份与 filemode（避免权限位变化触发修改）
 if [[ -n "${GIT_USER_NAME:-}" ]]; then
   git -C "$CODE_REPO_DIR" config user.name "$GIT_USER_NAME"
 fi
 if [[ -n "${GIT_USER_EMAIL:-}" ]]; then
   git -C "$CODE_REPO_DIR" config user.email "$GIT_USER_EMAIL"
 fi
-# 避免权限位变化引起修改
 git -C "$CODE_REPO_DIR" config core.filemode false
 
-# -------- 逐个执行新排期文件 --------
+# 当前克隆的提交（用于日志）
+CLONED_HEAD="$(git -C "$CODE_REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+
+# -------- 在“代码工作区”的 workplan 中扫描新增排期 --------
+CODE_PLAN_DIR="$CODE_REPO_DIR/workplan"
+if [[ ! -d "$CODE_PLAN_DIR" ]]; then
+  echo "[$(log_ts)] No workplan directory found in code workspace: $CODE_PLAN_DIR"
+  # 仍然更新 lastExecutionTime 为当前时间，避免下次重复扫描
+  NOW_TS="$(date +%s)"
+  if [[ "$USE_JQ" -eq 1 ]]; then
+    jq -n --argjson ts "$NOW_TS" '{lastExecutionTime: $ts}' > "$STATE_FILE"
+  else
+    printf '{"lastExecutionTime":%s}\n' "$NOW_TS" > "$STATE_FILE"
+  fi
+  exit 0
+fi
+
+mapfile -d '' CODE_PLANS_ALL < <(find "$CODE_PLAN_DIR" -maxdepth 1 -type f -name "*.txt" -print0 | sort -z)
+
+NEW_PLANS=()
+for pf in "${CODE_PLANS_ALL[@]}"; do
+  [[ -z "${pf:-}" ]] && continue
+  fname="$(basename "$pf")"
+  ts="$(plan_name_to_epoch "$fname")"
+  if [[ "$ts" -gt "$LAST_EXEC_TS" ]]; then
+    NEW_PLANS+=("$pf")
+  fi
+done
+
+if [[ "${#NEW_PLANS[@]}" -eq 0 ]]; then
+  echo "[$(log_ts)] No new workplan to process since lastExecutionTime=$LAST_EXEC_TS"
+  NOW_TS="$(date +%s)"
+  if [[ "$USE_JQ" -eq 1 ]]; then
+    jq -n --argjson ts "$NOW_TS" '{lastExecutionTime: $ts}' > "$STATE_FILE"
+  else
+    printf '{"lastExecutionTime":%s}\n' "$NOW_TS" > "$STATE_FILE"
+  fi
+  exit 0
+fi
+
+echo "[$(log_ts)] Found ${#NEW_PLANS[@]} new workplan(s)."
+
+# -------- 逐个执行排期 --------
 MAX_TS_PROCESSED="$LAST_EXEC_TS"
 
-for PLAN_PATH in "${NEW_PLANS[@]}"; do
-  PLAN_NAME="$(basename "$PLAN_PATH")"
+for PLAN_FILE in "${NEW_PLANS[@]}"; do
+  PLAN_NAME="$(basename "$PLAN_FILE")"
   PLAN_STAMP="${PLAN_NAME%.*}"
   PLAN_TS="$(plan_name_to_epoch "$PLAN_NAME")"
   if [[ "$PLAN_TS" -gt "$MAX_TS_PROCESSED" ]]; then
@@ -153,20 +164,26 @@ for PLAN_PATH in "${NEW_PLANS[@]}"; do
   FULL_LOG_PATH="${SCRIPT_RESULT_DIR}/${PLAN_STAMP}_full.log"
   RUN_LOG_PATH="${SCRIPT_RESULT_DIR}/${PLAN_STAMP}_run.log"
 
-  echo "[$(log_ts)] Processing plan: ${PLAN_NAME}"
+  echo "[$(log_ts)] Processing plan: ${PLAN_NAME} (HEAD: ${CLONED_HEAD})"
 
-  # 在代码工作区执行编译+运行（调用代码工作区的 run.sh，参数为脚本工作区的计划文件路径）
+  # 在代码工作区执行编译+运行；run.sh 位于代码工作区
   (
     cd "$CODE_REPO_DIR"
     {
       echo "=== AutoRunner started at $(log_ts) ==="
       echo "Script workspace: ${REPO_PATH}"
-      echo "Code workspace: ${CODE_REPO_DIR}, Branch: ${CODE_BRANCH}"
-      echo "Workplan (script workspace): ${PLAN_PATH}"
+      echo "Code workspace: ${CODE_REPO_DIR}"
+      echo "Branch: ${CODE_BRANCH}, HEAD: ${CLONED_HEAD}"
+      echo "Workplan (code workspace): ${PLAN_FILE}"
       echo "----- Build & Run begin -----"
 
-      # 捕获 run.sh 的“仅运行期输出”
-      RUN_OUTPUT="$("$CODE_REPO_DIR/workplan/run.sh" "$PLAN_PATH" 2>&1 | tee /dev/fd/3 3>&1)"
+      # 捕获 run.sh 的“仅运行期输出”到 RUN_LOG_PATH，同时所有输出进入 FULL_LOG_PATH
+      if [[ -x "$CODE_REPO_DIR/workplan/run.sh" ]]; then
+        RUN_OUTPUT="$("$CODE_REPO_DIR/workplan/run.sh" "$PLAN_FILE" 2>&1 | tee /dev/fd/3 3>&1)"
+      else
+        # 若未赋可执行权限，则用 bash 直接执行
+        RUN_OUTPUT="$(bash "$CODE_REPO_DIR/workplan/run.sh" "$PLAN_FILE" 2>&1 | tee /dev/fd/3 3>&1)"
+      fi
 
       echo "----- Build & Run end -----"
       echo "=== AutoRunner finished at $(log_ts) ==="
@@ -175,21 +192,22 @@ for PLAN_PATH in "${NEW_PLANS[@]}"; do
     echo "[$(log_ts)] ERROR during build/run for ${PLAN_NAME}; see full log: ${FULL_LOG_PATH}" >&2
   }
 
-  # 将日志复制到代码工作区的 result 中，以便提交推送
+  # 将结果日志复制到代码工作区的 result 目录，以便提交推送
   mkdir -p "$CODE_REPO_DIR/result"
-  cp -f "$FULL_LOG_PATH" "$CODE_REPO_DIR/result/"
-  cp -f "$RUN_LOG_PATH" "$CODE_REPO_DIR/result/"
+  cp -f "$FULL_LOG_PATH" "$CODE_REPO_DIR/result/" || true
+  cp -f "$RUN_LOG_PATH" "$CODE_REPO_DIR/result/" || true
 
   # 在代码工作区提交并推送（仅 result）
   (
     cd "$CODE_REPO_DIR"
     git add result || true
     git commit -m "Auto result for ${PLAN_STAMP}" || echo "Nothing to commit."
-    git push || echo "Push failed. Check Git auth."
+    # 显式推送当前分支
+    git push origin "$CODE_BRANCH" || echo "Push failed. Check Git auth."
   )
 done
 
-# -------- 更新“上次执行时间”状态 --------
+# -------- 更新 lastExecutionTime --------
 NEW_LAST_EXEC_TS="$MAX_TS_PROCESSED"
 if [[ "$USE_JQ" -eq 1 ]]; then
   jq -n --argjson ts "$NEW_LAST_EXEC_TS" '{lastExecutionTime: $ts}' > "$STATE_FILE"
