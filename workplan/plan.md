@@ -17,7 +17,7 @@
 二、准备工作（一次性）
 - 安装依赖（Arch）：
   - sudo pacman -Syu
-  - sudo pacman -S git cmake ninja base-devel openmp
+  - sudo pacman -S git cmake ninja base-devel openmp jq
 - OpenFHE 源码在仓库第三方子模块的路径为 third_party/openfhe（按你的 README）。
 - 确认仓库目录结构中包含：
   - workplan/ 放置指令文件和 run.sh
@@ -29,7 +29,13 @@
   - 将远程改为 SSH：git remote set-url origin git@github.com:hccyril/AppDemoOpenFHE.git
 - Git 用户信息：
   - git config --global user.name "你的名字"
-  - git config --global user.email "你的邮箱"
+  - 推荐使用 GitHub 的 noreply 邮箱以避免暴露真实邮箱（并避免 push 被拒绝）：
+    - 在 GitHub -> Settings -> Emails 中复制你的 noreply 地址（形如：123456+username@users.noreply.github.com）。
+    - 全局配置：git config --global user.email "123456+username@users.noreply.github.com"
+    - 仅当前仓库配置：git config user.email "123456+username@users.noreply.github.com"
+    - 如已用真实邮箱产生提交导致 push 被拒绝，可修复最近一次提交作者并强推到自己的分支：
+      - git commit --amend --reset-author --no-edit
+      - git push -f
 
 三、脚本与单元文件
 将以下文件添加到你的仓库（建议路径如下）。脚本中的构建命令已经与 README 对齐，并适配了 Arch。
