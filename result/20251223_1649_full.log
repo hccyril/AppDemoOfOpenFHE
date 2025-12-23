@@ -1,0 +1,8 @@
+=== AutoRunner started at 2025-12-23 16:51:20 ===
+Script workspace: /home/huang/GIT/AppDemoOfOpenFHE
+Code workspace: /home/huang/runner/AppDemoOfOpenFHE
+Branch: main, HEAD: f2cded0e3e014dcb570bef431b59bf95991c4bb7
+Workplan (code workspace): /home/huang/runner/AppDemoOfOpenFHE/workplan/20251223_1649.txt
+----- Build & Run begin -----
+----- Build & Run end -----
+=== AutoRunner finished at 2025-12-23 16:51:20 ===
