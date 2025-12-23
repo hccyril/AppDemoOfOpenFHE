@@ -1,60 +1,37 @@
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         #!/usr/bin/env bash
-# 说明：
-# - 接收一个参数：计划文件路径（例如 workplan/20251211_1600.txt）
-# - 按 README 执行：安装依赖 -> 构建并安装 OpenFHE -> 构建应用 -> 运行应用
+#!/usr/bin/env bash
+# 运行脚本（代码工作区固定路径版）
+# - 工作目录固定为：$HOME/runner/AppDemoOfOpenFHE
+# - 只编译并运行你的示例应用，假设 OpenFHE 已安装在 $HOME/openfhe-install
+# - 接收一个参数：计划文件路径（来自“代码工作区”的 workplan/*.txt）
 # - 将“仅运行期输出”打印到标准输出（供上层采集）
-# - 将构建与安装过程的详细输出也打印到标准输出（供上层“完整日志”收集）
 
 set -euo pipefail
 
 WORKPLAN_FILE="${1:?Usage: run.sh <workplan_file>}"
 
-# 可配置前缀与目录（与 README 对齐）
+# 固定工作目录（代码工作区）
+CODE_REPO_DIR="${HOME}/runner/AppDemoOfOpenFHE"
 OPENFHE_PREFIX="${HOME}/openfhe-install"
 BUILD_DIR="build"
-OPENFHE_SUBMODULE_DIR="third_party/openfhe"
 APP_BINARY="./build/AppDemoOpenFHE"
 
-# 解析计划文件（如需要参数，可从计划文件读取）
+# 切换到代码工作区
+cd "$CODE_REPO_DIR"
+
+# 展示计划文件内容（如需要用于参数）
 if [[ -f "$WORKPLAN_FILE" ]]; then
   echo "Workplan file: $WORKPLAN_FILE"
-  PLAN_CONTENT="$(cat "$WORKPLAN_FILE")"
   echo "Workplan content:"
-  echo "$PLAN_CONTENT"
+  cat "$WORKPLAN_FILE"
 fi
 
-# 安装依赖（Arch）
-# 注：若已安装可跳过。这里保留输出以便完整日志可见。
-echo "[Deps] Installing dependencies (Arch Linux)..."
-if command -v pacman >/dev/null 2>&1; then
-  echo "Using pacman..."
-  # 仅演示输出，不强制自动同意；生产可在外部执行
-  echo "Run manually if not root: sudo pacman -S --needed git cmake ninja base-devel openmp"
-else
-  echo "pacman not found, please ensure you're on Arch and deps are installed."
+# 验证 OpenFHE 已安装（可选，失败仅提示不退出）
+if [[ ! -f "${OPENFHE_PREFIX}/lib/libOPENFHEcore.so" ]]; then
+  echo "[Warn] OpenFHE not found in ${OPENFHE_PREFIX}. Please ensure it is installed." >&2
 fi
-
-# 构建并安装 OpenFHE（参考 README 第 3 节）
-echo "[OpenFHE] Configure and install to ${OPENFHE_PREFIX}..."
-pushd "${OPENFHE_SUBMODULE_DIR}"
-cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_EXAMPLES=OFF \
-  -DBUILD_UNITTESTS=OFF \
-  -DBUILD_BENCHMARKS=OFF \
-  -DCMAKE_INSTALL_PREFIX="${OPENFHE_PREFIX}"
-cmake --build build -j
-cmake --install build
-
-# 关键文件验证（参考 README）
-ls "${OPENFHE_PREFIX}/include/openfhe/pke/openfhe.h"
-ls "${OPENFHE_PREFIX}/include/openfhe/core/utils/debug.h"
-ls "${OPENFHE_PREFIX}/lib/libOPENFHEcore.so"
-ls "${OPENFHE_PREFIX}/lib/libOPENFHEpke.so"
-popd
 
 # 构建应用（参考 README 第 4 节）
-echo "[App] Configure & build..."
+echo "[App] Configure & build (Release)..."
 cmake -S . -B "${BUILD_DIR}" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DOpenFHE_DIR="${OPENFHE_PREFIX}/lib/OpenFHE"
@@ -70,5 +47,5 @@ if [[ ! -x "${APP_BINARY}" ]]; then
   exit 1
 fi
 
-# 运行并将输出写到 stdout（供上层采集为 run.log）
+# 程序的标准输出即“仅运行期输出”
 "${APP_BINARY}"

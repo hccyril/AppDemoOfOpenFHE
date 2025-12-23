@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# AutoRunner（简化版：先删后克隆，在代码工作区扫描排期并执行）
-# 说明：
-# - 始终先删除代码工作区目录，等待3秒，再克隆最新代码到代码工作区
-# - 仅在“代码工作区”的 workplan 中检查新增排期（文件名形如 YYYYMMDD_HHMM.txt）
-# - 编译与运行在“代码工作区”执行
+# AutoRunner（简化版）
+# - 始终删除代码工作区目录，等待3秒，再克隆最新代码到代码工作区
+# - 在“代码工作区”的 workplan 中检查新增排期（文件名形如 YYYYMMDD_HHMM.txt）
+# - 编译与运行：调用“脚本工作区”的 run.sh（你自行 chmod +x），run.sh 会在代码工作区内工作
 # - 日志与结果首先写入“脚本工作区”的 result 目录，然后复制一份到“代码工作区”的 result
 # - 提交与推送在“代码工作区”执行（仅提交 result 目录）
-# - 假定 jq 已安装可用
+# - 假定 jq 可用；不处理子模块
 
 set -euo pipefail
 
 # 脚本工作区（当前仓库）
 REPO_PATH="${REPO_PATH:-$PWD}"
+SCRIPT_RUN_SH="${SCRIPT_RUN_SH:-$REPO_PATH/workplan/run.sh}"
 SCRIPT_RESULT_DIR="${SCRIPT_RESULT_DIR:-$REPO_PATH/result}"
 STATE_FILE="${STATE_FILE:-$REPO_PATH/scripts/state.json}"
 
@@ -129,29 +129,26 @@ for PLAN_FILE in "${NEW_PLANS[@]}"; do
 
   echo "[$(log_ts)] Processing plan: ${PLAN_NAME} (HEAD: ${CLONED_HEAD})"
 
-  # 在代码工作区执行编译+运行；run.sh 位于代码工作区
-  (
-    cd "$CODE_REPO_DIR"
-    {
-      echo "=== AutoRunner started at $(log_ts) ==="
-      echo "Script workspace: ${REPO_PATH}"
-      echo "Code workspace: ${CODE_REPO_DIR}"
-      echo "Branch: ${CODE_BRANCH}, HEAD: ${CLONED_HEAD}"
-      echo "Workplan (code workspace): ${PLAN_FILE}"
-      echo "----- Build & Run begin -----"
+  # 在代码工作区执行编译+运行；调用“脚本工作区”的 run.sh
+  {
+    echo "=== AutoRunner started at $(log_ts) ==="
+    echo "Script workspace: ${REPO_PATH}"
+    echo "Code workspace: ${CODE_REPO_DIR}"
+    echo "Branch: ${CODE_BRANCH}, HEAD: ${CLONED_HEAD}"
+    echo "Workplan (code workspace): ${PLAN_FILE}"
+    echo "----- Build & Run begin -----"
 
-      if [[ -x "$CODE_REPO_DIR/workplan/run.sh" ]]; then
-        RUN_OUTPUT="$("$CODE_REPO_DIR/workplan/run.sh" "$PLAN_FILE" 2>&1 | tee /dev/fd/3 3>&1)"
-      else
-        RUN_OUTPUT="$(bash "$CODE_REPO_DIR/workplan/run.sh" "$PLAN_FILE" 2>&1 | tee /dev/fd/3 3>&1)"
-      fi
+    # run.sh 会自行在代码工作区内工作；你需确保脚本工作区的 run.sh 已 chmod +x
+    if [[ -x "$SCRIPT_RUN_SH" ]]; then
+      "$SCRIPT_RUN_SH" "$PLAN_FILE" 2>&1 | tee "$RUN_LOG_PATH"
+    else
+      # 兜底执行（若未 chmod，可先用 bash 调起）
+      bash "$SCRIPT_RUN_SH" "$PLAN_FILE" 2>&1 | tee "$RUN_LOG_PATH"
+    fi
 
-      echo "----- Build & Run end -----"
-      echo "=== AutoRunner finished at $(log_ts) ==="
-    } 3> >(cat > "$RUN_LOG_PATH") | cat > "$FULL_LOG_PATH"
-  ) || {
-    echo "[$(log_ts)] ERROR during build/run for ${PLAN_NAME}; see full log: ${FULL_LOG_PATH}" >&2
-  }
+    echo "----- Build & Run end -----"
+    echo "=== AutoRunner finished at $(log_ts) ==="
+  } | tee "$FULL_LOG_PATH"
 
   # 将结果日志复制到代码工作区的 result 目录，以便提交推送
   mkdir -p "$CODE_REPO_DIR/result"
