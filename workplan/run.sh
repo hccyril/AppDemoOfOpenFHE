@@ -13,7 +13,7 @@ WORKPLAN_FILE="${1:?Usage: run.sh <workplan_file>}"
 CODE_REPO_DIR="${HOME}/runner/AppDemoOfOpenFHE"
 OPENFHE_PREFIX="${HOME}/openfhe-install"
 BUILD_DIR="build"
-APP_BINARY="./build/AppDemoOpenFHE"
+APP_BINARY="./build/AppDemo"
 
 # 切换到代码工作区
 cd "$CODE_REPO_DIR"
