@@ -1,0 +1,102 @@
+=== AutoRunner started at 2025-12-23 18:33:45 ===
+Script workspace: /home/huang/GIT/AppDemoOfOpenFHE
+Code workspace: /home/huang/runner/AppDemoOfOpenFHE
+Branch: main, HEAD: 020c2945ed5f8b167ab237ae9313eafb4d417364
+Workplan (code workspace): /home/huang/runner/AppDemoOfOpenFHE/workplan/20251223_1829.txt
+----- Build & Run begin -----
+Workplan file: /home/huang/runner/AppDemoOfOpenFHE/workplan/20251223_1829.txt
+Workplan content:
+1st run[App] Configure & build (Release)...
+-- The CXX compiler identification is GNU 15.2.1
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- OPENFHE_PREFIX=/home/huang/openfhe-install
+-- Configuring done (0.4s)
+-- Generating done (0.0s)
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    OpenFHE_DIR
+
+
+-- Build files have been written to: /home/huang/runner/AppDemoOfOpenFHE/build
+[1/4] Building CXX object CMakeFiles/AppDemo.dir/AppDemo.cpp.o
+[2/4] Building CXX object CMakeFiles/AppDemo.dir/BFVrnsExperiment.cpp.o
+[3/4] Building CXX object CMakeFiles/AppDemo.dir/AppDemoOpenFHE.cpp.o
+[4/4] Linking CXX executable AppDemo
+[Run] Executing ./build/AppDemo ...
+
+This code demonstrates the use of the BFVrns scheme for homomorphic multiplication. 
+This code shows how to auto-generate parameters during run-time based on desired plaintext moduli and security levels. 
+In this demonstration we use three input plaintext and show how to both add them together and multiply them together. 
+
+p = 536903681
+n = 16384
+log2 q = 240
+
+Running key generation (used for source data)...
+Key generation time: 16ms
+Running key generation for homomorphic multiplication evaluation keys...
+Key generation time for homomorphic multiplication evaluation keys: 104ms
+
+Original Plaintext #1: 
+(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ... )
+
+Original Plaintext #2: 
+(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ... )
+
+Original Plaintext #3: 
+(2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ... )
+
+Original Plaintext #4: 
+(2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ... )
+
+Original Plaintext #5: 
+(3, 2, 1, 4, 5, 6, 7, 8, 9, 10, 11, 12, ... )
+
+Original Plaintext #6: 
+(3, 2, 1, 4, 5, 6, 7, 8, 9, 10, 11, 12, ... )
+
+Original Plaintext #7: 
+(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ... )
+
+Running encryption of all plaintexts... Completed
+
+Average encryption time: 10.5714ms
+
+Total time of multiplying 2 ciphertexts using EvalMult w/ relinearization: 17ms
+
+Decryption time: 1ms
+
+Result of homomorphic multiplication of ciphertexts #1 and #2: 
+(1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121, 144, ... )
+
+Running a binary-tree multiplication of 7 ciphertexts...Completed
+
+Total time of multiplying 7 ciphertexts using EvalMultMany: 88ms
+
+Result of 6 homomorphic multiplications: 
+(36, 32, 243, 16384, 78125, 279936, 823543, 2097152, 4782969, 10000000, 19487171, 35831808, ... )
+
+Running a depth-3 multiplication w/o relinearization until the very end...Completed
+Time of multiplying 2 ciphertexts w/o relinearization: 10ms
+
+Result of 3 homomorphic multiplications: 
+(2, 4, 27, 64, 125, 216, 343, 512, 729, 1000, 1331, 1728, ... )
+
+Running a depth-3 multiplication w/o relinearization...Completed
+
+Result of 3 homomorphic multiplications: 
+(2, 4, 27, 64, 125, 216, 343, 512, 729, 1000, 1331, 1728, ... )
+
+Running a depth-3 multiplication w/ relinearization after each multiplication...Completed
+Time of multiplying 2 ciphertexts w/ relinearization: 14ms
+
+Result of 3 homomorphic multiplications: 
+(2, 4, 27, 64, 125, 216, 343, 512, 729, 1000, 1331, 1728, ... )
+runtest1 done!
+----- Build & Run end -----
+=== AutoRunner finished at 2025-12-23 18:33:54 ===
