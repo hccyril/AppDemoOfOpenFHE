@@ -38,6 +38,32 @@
             }
         },
         {
+            "name": "wsl-ubuntu-debug",
+            "displayName": "WSL Ubuntu Debug",
+            "description": "Debug build on WSL (Ubuntu) for Visual Studio F5",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "installDir": "${sourceDir}/out/install/${presetName}",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "OPENFHE_PREFIX": "$env{HOME}/openfhe-install-debug"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioRemoteSettings/CMake/1.0": {
+                    "sourceDir": "$env{HOME}/.vs/$ms{projectDirName}",
+                    "remoteCopySources": true,
+                    "remoteBuildRoot": "$env{HOME}/.vs/$ms{projectDirName}/out/build/${presetName}",
+                    "remoteInstallRoot": "$env{HOME}/.vs/$ms{projectDirName}/out/install/${presetName}",
+                    "remoteMachineName": "WSL:Ubuntu"
+                }
+            }
+        },
+        {
             "name": "x86-debug",
             "displayName": "x86 Debug",
             "inherits": "windows-base",
@@ -96,6 +122,32 @@
                     "sourceDir": "$env{HOME}/.vs/$ms{projectDirName}"
                 }
             }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "wsl-ubuntu-debug",
+            "configurePreset": "wsl-ubuntu-debug"
+        },
+        {
+            "name": "linux-debug",
+            "configurePreset": "linux-debug"
+        },
+        {
+            "name": "x64-debug",
+            "configurePreset": "x64-debug"
+        },
+        {
+            "name": "x64-release",
+            "configurePreset": "x64-release"
+        },
+        {
+            "name": "x86-debug",
+            "configurePreset": "x86-debug"
+        },
+        {
+            "name": "x86-release",
+            "configurePreset": "x86-release"
         }
     ]
 }

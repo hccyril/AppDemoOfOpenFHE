@@ -30,9 +30,24 @@ target_include_directories(AppDemo SYSTEM PRIVATE
 # Attempt to locate libs (do not hard fail)
 find_library(OPENFHE_CORE NAMES OPENFHEcore PATHS ${OPENFHE_PREFIX}/lib)
 find_library(OPENFHE_PKE NAMES OPENFHEpke PATHS ${OPENFHE_PREFIX}/lib)
+find_library(OPENFHE_BINFHE NAMES OPENFHEbinfhe PATHS ${OPENFHE_PREFIX}/lib)
+file(GLOB OPENFHE_ALL_SHARED "${OPENFHE_PREFIX}/lib/libOPENFHE*.so*")
 
-if(OPENFHE_CORE AND OPENFHE_PKE)
-  target_link_libraries(AppDemo PRIVATE ${OPENFHE_PKE} ${OPENFHE_CORE})
+set(_openfhe_found TRUE)
+foreach(_lib IN ITEMS OPENFHE_CORE OPENFHE_PKE OPENFHE_BINFHE)
+  if(NOT ${_lib})
+    set(_openfhe_found FALSE)
+  endif()
+endforeach()
+
+if(_openfhe_found)
+  target_link_libraries(AppDemo PRIVATE ${OPENFHE_PKE} ${OPENFHE_CORE} ${OPENFHE_BINFHE})
+
+  # Copy all OpenFHE shared libs (including versioned .so.1) next to the executable for easy run/debug
+  add_custom_command(TARGET AppDemo POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:AppDemo>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OPENFHE_ALL_SHARED} "$<TARGET_FILE_DIR:AppDemo>"
+    COMMENT "Copying OpenFHE shared libraries (with symlinks) next to AppDemo")
 else()
   message(WARNING "Could not find OpenFHE libraries in ${OPENFHE_PREFIX}/lib. Ensure you installed OpenFHE.")
 endif()
@@ -51,7 +66,14 @@ elseif (MSVC)
 endif()
 
 # rpath so binary can run without setting LD_LIBRARY_PATH after install
-set(CMAKE_BUILD_RPATH ${OPENFHE_PREFIX}/lib)
-set_target_properties(AppDemo PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
+# use escaped $ORIGIN to avoid shell/env expansion during link
+set(CMAKE_BUILD_RPATH "\$ORIGIN;${OPENFHE_PREFIX}/lib")
+set_target_properties(AppDemo PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib;${OPENFHE_PREFIX}/lib")
+# Also force rpath on the target to ensure loader picks libs from executable dir (and prefix) when F5/run
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # 【待验证】设置了--disable-new-dtags就使用RPATH不是RUNPATH了，然后之后不需要设置patchelf
+  target_link_options(AppDemo PRIVATE "-Wl,--disable-new-dtags" "-Wl,-rpath,\$ORIGIN" "-Wl,-rpath,${OPENFHE_PREFIX}/lib")
+  # target_link_options(AppDemo PRIVATE "-Wl,-rpath,\$ORIGIN" "-Wl,-rpath,${OPENFHE_PREFIX}/lib")
+endif()
 
 install(TARGETS AppDemo RUNTIME DESTINATION bin)
