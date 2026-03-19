@@ -23,7 +23,7 @@ sudo apt install -y libomp-dev
 OpenFHE 安装前缀统一为：`$HOME/openfhe-install`。
 
 ---
-## 2. 获取本仓库与添加子模块
+## 2. 获取本仓库与添加子模块（只有第一次初始化需要，已经配好子模块的可以忽略）
 ```bash
 # 克隆本项目（若已存在可跳过）
 git clone <YOUR_REPO_URL> AppDemoOpenFHE
@@ -54,7 +54,7 @@ cd ../..
 ## 3. 构建并安装 OpenFHE（在 WSL 内）
 进入子模块目录：
 ```bash
-cd third_party/openfhe
+cd ./openfhe
 ```
 配置（关闭示例、单元测试与基准，Release 模式）：
 ```bash
@@ -79,7 +79,7 @@ ls $HOME/openfhe-install/lib/libOPENFHEpke.so
 ```
 返回到项目根目录：
 ```bash
-cd ../../
+cd ../
 ```
 
 ---
