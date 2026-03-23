@@ -30,18 +30,18 @@ git clone <YOUR_REPO_URL> AppDemoOpenFHE
 cd AppDemoOpenFHE
 
 # 添加 OpenFHE 作为浅克隆子模块（只需主分支最近一次提交）
-git submodule add --depth 1 https://github.com/openfheorg/openfhe-development third_party/openfhe
+git submodule add --depth 1 https://github.com/openfheorg/openfhe-development openfhe
 
 # 初始化并更新递归子模块
 git submodule update --init --recursive
 
 # 记录到版本库
-git add .gitmodules third_party/openfhe
+git add .gitmodules openfhe
 git commit -m "Add OpenFHE as submodule"
 ```
 可选：禁止误向上游推送（保护上游仓库）：
 ```bash
-cd third_party/openfhe
+cd openfhe
 git remote set-url --push origin DISABLED
 cd ../..
 ```
@@ -86,7 +86,7 @@ cd ../
 ## 4. 构建示例应用
 配置：
 ```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOpenFHE_DIR=$HOME/openfhe-install/lib/OpenFHE
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENFHE_PREFIX=$HOME/openfhe-install/lib/OpenFHE
 ```
 构建：
 ```bash
@@ -142,18 +142,18 @@ export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
 ```bash
 sudo apt install -y libomp-dev
 rm -rf build
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOpenFHE_DIR=$HOME/openfhe-install/lib/OpenFHE
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENFHE_PREFIX=$HOME/openfhe-install/lib/OpenFHE
 cmake --build build -j
 ```
 
 ### 6.5 更新子模块到最新上游
 ```bash
-cd third_party/openfhe
+cd openfhe
 git fetch --depth 1 origin main
 git checkout main
 git pull --rebase
 cd ../..
-git add third_party/openfhe
+git add openfhe
 git commit -m "Update OpenFHE submodule"
 ```
 重新执行第 3、4 步构建。
@@ -161,7 +161,7 @@ git commit -m "Update OpenFHE submodule"
 ### 6.6 重新完全清理构建
 ```bash
 rm -rf build out
-find third_party/openfhe -maxdepth 1 -name build -type d -exec rm -rf {} +
+find openfhe -maxdepth 1 -name build -type d -exec rm -rf {} +
 ```
 然后重复配置与编译。
 
@@ -179,7 +179,7 @@ AppDemoOpenFHE/
   AppDemoOpenFHE.cpp      # 示例主程序
   AppDemoOpenFHE.h
   Manual.txt              # 简要笔记（原始操作记录）
-  third_party/openfhe/    # OpenFHE 子模块源码
+  openfhe/    # OpenFHE 子模块源码
   build/                  # （生成）项目构建目录
   out/                    # （可选生成）安装/打包输出
 ```
@@ -191,7 +191,7 @@ AppDemoOpenFHE/
 sudo apt install -y build-essential cmake ninja-build git libomp-dev
 
 # 构建 & 安装 OpenFHE
-cd third_party/openfhe
+cd openfhe
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_EXAMPLES=OFF -DBUILD_UNITTESTS=OFF -DBUILD_BENCHMARKS=OFF \
   -DCMAKE_INSTALL_PREFIX=$HOME/openfhe-install
@@ -200,7 +200,7 @@ cmake --install build
 cd ../../
 
 # 构建应用
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOpenFHE_DIR=$HOME/openfhe-install/lib/OpenFHE
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENFHE_PREFIX=$HOME/openfhe-install/lib/OpenFHE
 cmake --build build -j
 
 # 运行
