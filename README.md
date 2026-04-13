@@ -115,6 +115,20 @@ cp -a $HOME/openfhe-install/lib/libOPENFHE*.so out/lib/
 ./out/bin/AppDemoOpenFHE
 ```
 
+## 【调试用】3-5DEBUG. 调试构建并安装 OpenFHE（Debug）
+```sh
+cd openfhe
+rm -rf build-debug
+cmake -S . -B build-debug -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DBUILD_SHARED=ON -DBUILD_STATIC=OFF \
+  -DBUILD_EXAMPLES=OFF -DBUILD_UNITTESTS=OFF -DBUILD_BENCHMARKS=OFF \
+  -DCMAKE_INSTALL_PREFIX="$HOME/openfhe-install-debug"
+cmake --build build-debug -j
+cmake --install build-debug
+```
+构建完之后回到visual studio，按F5即可调试运行，并且能够断点进入OpenFHE内部代码，有关DEBUG遇到的更多问题细节参见[HowToDebug.md](./HowToDebug.md)
+
 ---
 ## 6. 常见问题与排查
 ### 6.1 头文件找不到
