@@ -1,7 +1,4 @@
-﻿// AppDemoOpenFHE.cpp: 定义应用程序的入口点。
-#include "AppDemoOpenFHE.h"
-
-/*
+﻿/*
   Example of a computation circuit of depth 3.
   BFVrns demo for a homomorphic multiplication of depth 6 and three different approaches for depth-3 multiplications
  */

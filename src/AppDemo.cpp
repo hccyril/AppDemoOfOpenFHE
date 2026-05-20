@@ -100,7 +100,7 @@ int main(int argc, char* argv[]) {
 #ifndef NDEBUG
     // Specify target test ID here directly during debugging
     constexpr bool kIsDebugBuild = true;
-    constexpr int kDebugDefaultTestId = 7;
+    constexpr int kDebugDefaultTestId = 1;
 #else
     constexpr bool kIsDebugBuild = false;
 #endif
@@ -116,14 +116,9 @@ int main(int argc, char* argv[]) {
     }
     else {
         std::cout << "Select test to run:" << std::endl;
-        std::cout << "  1: Lab Stage A (PolyDecmp/Prune basics)" << std::endl;
-        std::cout << "  2: Lab Stage B (MV-CC)" << std::endl;
-        std::cout << "  3: Lab Stage C (MM-CC)" << std::endl;
-        std::cout << "  4: Lab C TimeCheck MMCC" << std::endl;
-        std::cout << "  5: Base Operator Time Test" << std::endl;
-        std::cout << "  6: BCHP Paper C-MT Algorithm (Small Data)" << std::endl;
-        std::cout << "  7: Lab Stage C Large (Blocked MM-CC 64x64 * 64x32)" << std::endl;
-        std::cout << "Enter test id (1-8, default=1): ";
+        std::cout << "  1: Test1 (Simple BFVRNS)" << std::endl;
+        std::cout << "  2: Test2 (BFVRNS with multiple parameters)" << std::endl;
+        std::cout << "Enter test id (default=1): ";
         if (!(std::cin >> t)) {
             std::cerr << "Invalid input, using default (1)" << std::endl;
             t = 1;
@@ -135,32 +130,12 @@ int main(int argc, char* argv[]) {
 
     switch(t) {
         case 1:
-            std::cout << "\nRunning Test 1: Lab Stage A" << std::endl;
-            fhe_eval::RunLabADemo();
+            std::cout << "\nRunning Test 1: Test1 (Simple BFVRNS)" << std::endl;
+            runtest1();
             break;
         case 2:
-            std::cout << "\nRunning Test 2: Lab Stage B" << std::endl;
-            fhe_eval::RunLabBDemo();
-            break;
-        case 3:
-            std::cout << "\nRunning Test 3: Lab Stage C" << std::endl;
-            fhe_eval::RunLabCDemo();
-            break;
-        case 4:
-            std::cout << "\nRunning Test 4: Lab C TimeCheck MMCC" << std::endl;
-            fhe_eval::RunTimeCheckMMCC();
-			break;
-        case 5:
-            std::cout << "\nRunning Test 5: Base Operator Time Test" << std::endl;
-            fhe_eval::RunBaseOperatorTimeTestDemo();
-            break;
-        case 6:
-            std::cout << "\nRunning Test 5: BCHP Paper C-MT" << std::endl;
-            fhe_eval::bchp_test_run();
-            break;
-        case 7:
-            std::cout << "\nRunning Test 7: Lab Stage C Large (Blocked MM-CC)" << std::endl;
-            fhe_eval::RunLabCLargeDemo();
+            std::cout << "\nRunning Test 2: Test2 (BFVRNS with multiple parameters)" << std::endl;
+            runtest2();
             break;
         default:
             std::cerr << "Unknown test id: " << t << std::endl;
