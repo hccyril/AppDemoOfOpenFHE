@@ -8,21 +8,21 @@
 #include <algorithm>
 #include <cmath>
 
-// ËµÃ÷: Í·ÎÄ¼şÂ·¾¶²ÉÓÃÓë CMake ÖĞ target_include_directories ±£³ÖÒ»ÖÂµÄÏà¶ÔÇ°×º¡£
-// - OpenFHE PKE ¶¥²ã½Ó¿Ú: Ìá¹© BFVrns µÈ·½°¸µÄÉÏÏÂÎÄÓë²Ù×÷
-// - µ÷ÊÔ/¼ÆÊ±¹¤¾ß: Ìá¹© TIC/TOC ¼ÆÊ±ºêºÍ TimeVar ÀàĞÍ
-// - ±ê×¼¸ñ²ÎÊı²éÑ¯: Í¨¹ı¹«¿ª API ²é±í£¨ÀıÈç FindMaxQ£©ÒÔ±ã¶ÔÕÕ±ê×¼±í
+// è¯´æ˜: å¤´æ–‡ä»¶è·¯å¾„é‡‡ç”¨ä¸ CMake ä¸­ target_include_directories ä¿æŒä¸€è‡´çš„ç›¸å¯¹å‰ç¼€ã€‚
+// - OpenFHE PKE é¡¶å±‚æ¥å£: æä¾› BFVrns ç­‰æ–¹æ¡ˆçš„ä¸Šä¸‹æ–‡ä¸æ“ä½œ
+// - è°ƒè¯•/è®¡æ—¶å·¥å…·: æä¾› TIC/TOC è®¡æ—¶å®å’Œ TimeVar ç±»å‹
+// - æ ‡å‡†æ ¼å‚æ•°æŸ¥è¯¢: é€šè¿‡å…¬å¼€ API æŸ¥è¡¨ï¼ˆä¾‹å¦‚ FindMaxQï¼‰ä»¥ä¾¿å¯¹ç…§æ ‡å‡†è¡¨
 #include "pke/openfhe.h"
 #include "core/utils/debug.h"
 #include "lattice/stdlatticeparms.h"
 
 using namespace lbcrypto;
 
-// ÔËĞĞÅäÖÃ:
-// - secs: ÒªÇóµÄ°²È«¼¶±ğ¼¯ºÏ£¨Í¬Ê±¸²¸Ç classic Óë quantum£©
-// - depths: ³Ë·¨Éî¶ÈÁĞ±í£¬ÓÃÓÚÈÃ¿â×Ô¶¯Ñ¡ÔñºÏÊÊµÄ²ÎÊı
-// - ptm: Ã÷ÎÄÄ£Êı¡£65537 Îª½ÏĞ¡ÇÒ³£ÓÃµÄËØÊı£¬±ãÓÚ BFV/ BFVrns ×Ô¶¯Ñ¡²Î
-// - useAllDists: ÊÇ·ñ±éÀúËùÓĞÃÜÔ¿·Ö²¼£»Ä¬ÈÏ½ö ternary£¨Óë BFVrns ³£ÓÃÉèÖÃÒ»ÖÂ£©
+// è¿è¡Œé…ç½®:
+// - secs: è¦æ±‚çš„å®‰å…¨çº§åˆ«é›†åˆï¼ˆåŒæ—¶è¦†ç›– classic ä¸ quantumï¼‰
+// - depths: ä¹˜æ³•æ·±åº¦åˆ—è¡¨ï¼Œç”¨äºè®©åº“è‡ªåŠ¨é€‰æ‹©åˆé€‚çš„å‚æ•°
+// - ptm: æ˜æ–‡æ¨¡æ•°ã€‚65537 ä¸ºè¾ƒå°ä¸”å¸¸ç”¨çš„ç´ æ•°ï¼Œä¾¿äº BFV/ BFVrns è‡ªåŠ¨é€‰å‚
+// - useAllDists: æ˜¯å¦éå†æ‰€æœ‰å¯†é’¥åˆ†å¸ƒï¼›é»˜è®¤ä»… ternaryï¼ˆä¸ BFVrns å¸¸ç”¨è®¾ç½®ä¸€è‡´ï¼‰
 struct RunConfig {
     std::vector<SecurityLevel> secs { HEStd_128_classic, HEStd_192_classic, HEStd_256_classic,
                                       HEStd_128_quantum, HEStd_192_quantum, HEStd_256_quantum };
@@ -31,45 +31,45 @@ struct RunConfig {
     bool useAllDists = false;
 };
 
-// ½« SecurityLevel Ã¶¾ÙÖµ×ªÎª×Ö·û´®£¬¹© CSV Êä³ö
+// å°† SecurityLevel æšä¸¾å€¼è½¬ä¸ºå­—ç¬¦ä¸²ï¼Œä¾› CSV è¾“å‡º
 static std::string ToString(SecurityLevel sl){ std::ostringstream os; os<<sl; return os.str(); }
-// ½«·Ö²¼Ã¶¾ÙÖµ×ªÎª×Ö·û´®£¬¹© CSV Êä³ö
+// å°†åˆ†å¸ƒæšä¸¾å€¼è½¬ä¸ºå­—ç¬¦ä¸²ï¼Œä¾› CSV è¾“å‡º
 static const char* DistName(DistributionType d){ switch(d){case HEStd_uniform: return "HEStd_uniform"; case HEStd_error: return "HEStd_error"; case HEStd_ternary: return "HEStd_ternary"; default: return "UNKNOWN";} }
-// ¼ÆÊ±¹¤¾ß·â×°: ·µ»Ø TOC(t) ºÁÃëÖµ
+// è®¡æ—¶å·¥å…·å°è£…: è¿”å› TOC(t) æ¯«ç§’å€¼
 static double Ms(TimeVar& t){ return TOC(t); }
 
-// Ö÷²âÊÔÀı: ¸ù¾İ°²È«¼¶±ğ/Éî¶È/·Ö²¼Éú³ÉÉÏÏÂÎÄ£¬²âÁ¿¹Ø¼ü²Ù×÷ÓÃÊ±²¢Êä³ö CSV ±í
+// ä¸»æµ‹è¯•ä¾‹: æ ¹æ®å®‰å…¨çº§åˆ«/æ·±åº¦/åˆ†å¸ƒç”Ÿæˆä¸Šä¸‹æ–‡ï¼Œæµ‹é‡å…³é”®æ“ä½œç”¨æ—¶å¹¶è¾“å‡º CSV è¡¨
 void runtest2(){
     RunConfig cfg;
-    // Ä¬ÈÏ½ö²âÊÔ ternary ·Ö²¼£»ÈçĞè¸ü¶à·Ö²¼£¬´ò¿ª useAllDists
+    // é»˜è®¤ä»…æµ‹è¯• ternary åˆ†å¸ƒï¼›å¦‚éœ€æ›´å¤šåˆ†å¸ƒï¼Œæ‰“å¼€ useAllDists
     std::vector<DistributionType> dists = { HEStd_ternary };
     if(cfg.useAllDists) dists = { HEStd_uniform, HEStd_error, HEStd_ternary };
 
-    // CSV ±íÍ·ËµÃ÷:
-    // - scheme: ¼ÓÃÜ·½°¸£¨ÕâÀï¹Ì¶¨ BFVrns£©
-    // - sec: °²È«¼¶±ğ£¨classic/quantum µÄ 128/192/256£©
-    // - dist: ÃÜÔ¿·Ö²¼ÀàĞÍ£¨uniform/error/ternary£©
-    // - reqDepth: ÇëÇóµÄ³Ë·¨Éî¶È£¨¿â½«»ùÓÚ´Ë×Ô¶¯Ñ¡²Î£©
-    // - ptm: Ã÷ÎÄÄ£Êı£¨PlaintextModulus£©
-    // - ringDim: Êµ¼ÊÊ¹ÓÃµÄ»·Î¬¶È£¨n = CyclotomicOrder/2£©
-    // - log2q: ÀÛ¼Ó¸÷ CRT ËşËØÊıÄ£ÊıµÄ log2 ½üËÆÖµ
-    // - towers: CRT Ëş²ãÊı£¨ÖÊÊıÄ£ÊıÊıÁ¿£©
-    // - standardMaxLogQ: ¸ù¾İ±ê×¼¸ñ²ÎÊı£¨dist+sec+ringDim£©²éÑ¯µ½µÄ×î´ó logQ£¨¹©¶ÔÕÕ²Î¿¼£©
-    // - *_ms: ¹Ø¼ü²Ù×÷µÄºÁÃëºÄÊ±£¨KeyGen, EvalMultKeysGen, Encrypt Á½´Î, EvalAdd, EvalMult, Decrypt£©
+    // CSV è¡¨å¤´è¯´æ˜:
+    // - scheme: åŠ å¯†æ–¹æ¡ˆï¼ˆè¿™é‡Œå›ºå®š BFVrnsï¼‰
+    // - sec: å®‰å…¨çº§åˆ«ï¼ˆclassic/quantum çš„ 128/192/256ï¼‰
+    // - dist: å¯†é’¥åˆ†å¸ƒç±»å‹ï¼ˆuniform/error/ternaryï¼‰
+    // - reqDepth: è¯·æ±‚çš„ä¹˜æ³•æ·±åº¦ï¼ˆåº“å°†åŸºäºæ­¤è‡ªåŠ¨é€‰å‚ï¼‰
+    // - ptm: æ˜æ–‡æ¨¡æ•°ï¼ˆPlaintextModulusï¼‰
+    // - ringDim: å®é™…ä½¿ç”¨çš„ç¯ç»´åº¦ï¼ˆn = CyclotomicOrder/2ï¼‰
+    // - log2q: ç´¯åŠ å„ CRT å¡”ç´ æ•°æ¨¡æ•°çš„ log2 è¿‘ä¼¼å€¼
+    // - towers: CRT å¡”å±‚æ•°ï¼ˆè´¨æ•°æ¨¡æ•°æ•°é‡ï¼‰
+    // - standardMaxLogQ: æ ¹æ®æ ‡å‡†æ ¼å‚æ•°ï¼ˆdist+sec+ringDimï¼‰æŸ¥è¯¢åˆ°çš„æœ€å¤§ logQï¼ˆä¾›å¯¹ç…§å‚è€ƒï¼‰
+    // - *_ms: å…³é”®æ“ä½œçš„æ¯«ç§’è€—æ—¶ï¼ˆKeyGen, EvalMultKeysGen, Encrypt ä¸¤æ¬¡, EvalAdd, EvalMult, Decryptï¼‰
     std::cout << "scheme,sec,dist,reqDepth,ptm,ringDim,log2q,towers,standardMaxLogQ,keygen_ms,evalmultkeys_ms,enc1_ms,enc2_ms,add_ms,mult_ms,dec_ms" << std::endl;
 
     for(auto dist : dists){
         for(auto sec : cfg.secs){
             for(auto reqDepth : cfg.depths){
-                // Í¨¹ı CCParams Éè¶¨ÇëÇóµÄ²ÎÊı¡£×¢Òâ£º²»ÊÖ¶¯ÉèÖÃ ringDim£¬½»ÓÉ¿â×Ô¶¯Ñ¡È¡ÒÔÂú×ã°²È«ÓëÉî¶ÈĞèÇó
+                // é€šè¿‡ CCParams è®¾å®šè¯·æ±‚çš„å‚æ•°ã€‚æ³¨æ„ï¼šä¸æ‰‹åŠ¨è®¾ç½® ringDimï¼Œäº¤ç”±åº“è‡ªåŠ¨é€‰å–ä»¥æ»¡è¶³å®‰å…¨ä¸æ·±åº¦éœ€æ±‚
                 CCParams<CryptoContextBFVRNS> params;
                 params.SetPlaintextModulus(cfg.ptm);
                 params.SetMultiplicativeDepth(reqDepth);
                 params.SetSecurityLevel(sec);
-                params.SetMaxRelinSkDeg(3); // µäĞÍµÄÖØÏßĞÔ»¯×î´ó½×
-                // ÃÜÔ¿·Ö²¼Ñ¡Ôñ£º
-                // - ternary: Í³Ò»²ÉÓÃ UNIFORM_TERNARY£¨BFVrns ³£ÓÃ£©
-                // - uniform/error: ·Ö±ğÉèÎª UNIFORM_TERNARY / GAUSSIAN£¨ÊµÑéÓÃ£©
+                params.SetMaxRelinSkDeg(3); // å…¸å‹çš„é‡çº¿æ€§åŒ–æœ€å¤§é˜¶
+                // å¯†é’¥åˆ†å¸ƒé€‰æ‹©ï¼š
+                // - ternary: ç»Ÿä¸€é‡‡ç”¨ UNIFORM_TERNARYï¼ˆBFVrns å¸¸ç”¨ï¼‰
+                // - uniform/error: åˆ†åˆ«è®¾ä¸º UNIFORM_TERNARY / GAUSSIANï¼ˆå®éªŒç”¨ï¼‰
                 switch(dist){
                     case HEStd_ternary: params.SetSecretKeyDist(UNIFORM_TERNARY); break;
                     case HEStd_uniform: params.SetSecretKeyDist(UNIFORM_TERNARY); break;
@@ -77,45 +77,45 @@ void runtest2(){
                     default:            params.SetSecretKeyDist(UNIFORM_TERNARY); break;
                 }
 
-                // Éú³É¼ÓÃÜÉÏÏÂÎÄ£»ÈçÓöµ½ÎŞĞ§×éºÏ£¨°²È«¼¶±ğ/Éî¶È/ptm ²»¿ÉÂú×ã£©£¬Ìø¹ı¸ÃĞĞ
+                // ç”ŸæˆåŠ å¯†ä¸Šä¸‹æ–‡ï¼›å¦‚é‡åˆ°æ— æ•ˆç»„åˆï¼ˆå®‰å…¨çº§åˆ«/æ·±åº¦/ptm ä¸å¯æ»¡è¶³ï¼‰ï¼Œè·³è¿‡è¯¥è¡Œ
                 CryptoContext<DCRTPoly> cc;
                 try { cc = GenCryptoContext(params); }
                 catch(const std::exception&){ continue; }
-                // ÆôÓÃËùĞè¹¦ÄÜÄ£¿é
+                // å¯ç”¨æ‰€éœ€åŠŸèƒ½æ¨¡å—
                 cc->Enable(PKE);
                 cc->Enable(KEYSWITCH);
                 cc->Enable(LEVELEDSHE);
                 cc->Enable(ADVANCEDSHE);
 
-                // ²É¼¯ÅÉÉúµÄ²ÎÊı£ºn¡¢log2(q) ½üËÆÖµ¡¢CRT Ëş²ãÊı
+                // é‡‡é›†æ´¾ç”Ÿçš„å‚æ•°ï¼šnã€log2(q) è¿‘ä¼¼å€¼ã€CRT å¡”å±‚æ•°
                 usint ringDim = cc->GetCryptoParameters()->GetElementParams()->GetCyclotomicOrder()/2;
                 const auto elemParams = cc->GetCryptoParameters()->GetElementParams();
                 double log2q = 0.0; const auto& crtParams = elemParams->GetParams();
                 for(const auto& p : crtParams){ log2q += std::log2(p->GetModulus().ConvertToDouble()); }
                 size_t towers = crtParams.size();
-                // ±ê×¼¸ñ²ÎÊı¶ÔÕÕ²éÑ¯£ºÓÃÓÚ²Î¿¼±ê×¼±íÖĞµÄ×î´ó logQ
+                // æ ‡å‡†æ ¼å‚æ•°å¯¹ç…§æŸ¥è¯¢ï¼šç”¨äºå‚è€ƒæ ‡å‡†è¡¨ä¸­çš„æœ€å¤§ logQ
                 usint standardMaxLogQ = StdLatticeParm::FindMaxQ(dist, sec, ringDim);
 
-                // ¼ÆÊ±¸÷½×¶ÎµÄºÄÊ±£¨ºÁÃë£©
+                // è®¡æ—¶å„é˜¶æ®µçš„è€—æ—¶ï¼ˆæ¯«ç§’ï¼‰
                 TimeVar t; double keygen_ms=0, evmk_ms=0, enc1_ms=0, enc2_ms=0, add_ms=0, mult_ms=0, dec_ms=0;
-                TIC(t); auto kp = cc->KeyGen(); keygen_ms = Ms(t); if(!kp.good()) continue; // Èô KeyGen Ê§°Ü£¬Ìø¹ı
-                TIC(t); cc->EvalMultKeysGen(kp.secretKey); evmk_ms = Ms(t); // Éú³É³Ë·¨ÆÀ¹ÀÃÜÔ¿
+                TIC(t); auto kp = cc->KeyGen(); keygen_ms = Ms(t); if(!kp.good()) continue; // è‹¥ KeyGen å¤±è´¥ï¼Œè·³è¿‡
+                TIC(t); cc->EvalMultKeysGen(kp.secretKey); evmk_ms = Ms(t); // ç”Ÿæˆä¹˜æ³•è¯„ä¼°å¯†é’¥
 
-                // ¹¹ÔìÁ½×é´ò°üÃ÷ÎÄ²¢·Ö±ğ¼ÓÃÜ£¬µ¥¶À¼ÆÊ±
+                // æ„é€ ä¸¤ç»„æ‰“åŒ…æ˜æ–‡å¹¶åˆ†åˆ«åŠ å¯†ï¼Œå•ç‹¬è®¡æ—¶
                 std::vector<int64_t> v1{1,2,3,4,5,6,7,8,9,10,11,12};
                 std::vector<int64_t> v2{2,3,4,5,6,7,8,9,10,11,12,13};
                 auto p1 = cc->MakePackedPlaintext(v1); auto p2 = cc->MakePackedPlaintext(v2);
                 TIC(t); auto c1 = cc->Encrypt(kp.publicKey, p1); enc1_ms = Ms(t);
                 TIC(t); auto c2 = cc->Encrypt(kp.publicKey, p2); enc2_ms = Ms(t);
 
-                // ÆÀ¹À¼Ó·¨Óë³Ë·¨£¬·Ö±ğ¼ÆÊ±
+                // è¯„ä¼°åŠ æ³•ä¸ä¹˜æ³•ï¼Œåˆ†åˆ«è®¡æ—¶
                 TIC(t); auto cadd = cc->EvalAdd(c1,c2); add_ms = Ms(t);
                 TIC(t); auto cmul = cc->EvalMult(c1,c2); mult_ms = Ms(t);
 
-                // ½âÃÜ³Ë·¨½á¹û²¢ÉèÖÃÊä³ö³¤¶È£¬¼ÆÊ±
+                // è§£å¯†ä¹˜æ³•ç»“æœå¹¶è®¾ç½®è¾“å‡ºé•¿åº¦ï¼Œè®¡æ—¶
                 Plaintext pout; TIC(t); cc->Decrypt(kp.secretKey, cmul, &pout); dec_ms = Ms(t); pout->SetLength(p1->GetLength());
 
-                // Êä³öÒ»ĞĞ CSV ½á¹û£¬±ãÓÚºóĞøµ¼Èëµ½Êı¾İ±í»òÂÛÎÄ½á¹û¶ÔÕÕ
+                // è¾“å‡ºä¸€è¡Œ CSV ç»“æœï¼Œä¾¿äºåç»­å¯¼å…¥åˆ°æ•°æ®è¡¨æˆ–è®ºæ–‡ç»“æœå¯¹ç…§
                 std::cout << "BFVrns" << ',' << ToString(sec) << ',' << DistName(dist) << ',' << reqDepth << ','
                           << cfg.ptm << ',' << ringDim << ',' << std::fixed << std::setprecision(2) << log2q << ','
                           << towers << ',' << standardMaxLogQ << ','
@@ -124,6 +124,6 @@ void runtest2(){
             }
         }
     }
-    // ½áÊøÌáÊ¾
+    // ç»“æŸæç¤º
     std::cout << "runtest2 done!" << std::endl;
 }

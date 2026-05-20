@@ -1,79 +1,124 @@
-﻿# CMakeList.txt: AppDemo 的 CMake 项目，在此处包括源代码并定义
-#
-cmake_minimum_required (VERSION 3.16)
-
-project (AppDemoOpenFHE LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.16)
+project(AppDemoOpenFHE LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Default prefix
+# Default build type for single-config generators
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+# ── OpenFHE ────────────────────────────────────────────────────────────
+# Prefer user-supplied prefix; default to submodule install location
 if(NOT OPENFHE_PREFIX)
-  if(DEFINED ENV{HOME})
-    set(OPENFHE_PREFIX "$ENV{HOME}/openfhe-install")
-  else()
-    set(OPENFHE_PREFIX "${CMAKE_SOURCE_DIR}/openfhe-install")
-  endif()
+    set(OPENFHE_PREFIX "${CMAKE_SOURCE_DIR}/openfhe")
 endif()
-message(STATUS "OPENFHE_PREFIX=${OPENFHE_PREFIX}")
 
-# Unified single entry executable
-add_executable(AppDemo AppDemo.cpp AppDemoOpenFHE.cpp BFVrnsExperiment.cpp AppDemoOpenFHE.h)
+# Try find_package first (uses installed OpenFHEConfig.cmake)
+find_package(OpenFHE QUIET HINTS "${OPENFHE_PREFIX}/lib/OpenFHE")
 
-# Include OpenFHE headers (mark SYSTEM to reduce warnings)
-target_include_directories(AppDemo SYSTEM PRIVATE 
-  ${OPENFHE_PREFIX}/include/openfhe
-  ${OPENFHE_PREFIX}/include/openfhe/core
-  ${OPENFHE_PREFIX}/include/openfhe/pke
-  ${OPENFHE_PREFIX}/include/openfhe/binfhe)
+# ── Sources ────────────────────────────────────────────────────────────
+add_executable(AppDemo
+    src/AppDemo.cpp
+    src/test1.cpp
+    src/test2.cpp
+)
 
-# Attempt to locate libs (do not hard fail)
-find_library(OPENFHE_CORE NAMES OPENFHEcore PATHS ${OPENFHE_PREFIX}/lib)
-find_library(OPENFHE_PKE NAMES OPENFHEpke PATHS ${OPENFHE_PREFIX}/lib)
-find_library(OPENFHE_BINFHE NAMES OPENFHEbinfhe PATHS ${OPENFHE_PREFIX}/lib)
-file(GLOB OPENFHE_ALL_SHARED "${OPENFHE_PREFIX}/lib/libOPENFHE*.so*")
+target_include_directories(AppDemo PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-set(_openfhe_found TRUE)
-foreach(_lib IN ITEMS OPENFHE_CORE OPENFHE_PKE OPENFHE_BINFHE)
-  if(NOT ${_lib})
-    set(_openfhe_found FALSE)
-  endif()
-endforeach()
+# ── OpenFHE linking ────────────────────────────────────────────────────
+if(OpenFHE_FOUND)
+    # find_package succeeded
+    target_link_libraries(AppDemo PRIVATE OPENFHEpke OPENFHEcore OPENFHEbinfhe)
 
-if(_openfhe_found)
-  target_link_libraries(AppDemo PRIVATE ${OPENFHE_PKE} ${OPENFHE_CORE} ${OPENFHE_BINFHE})
+    if(EXISTS "${OPENFHE_PREFIX}/include/openfhe/pke/openfhe.h")
+        set(OPENFHE_INC "${OPENFHE_PREFIX}/include/openfhe")
+        target_include_directories(AppDemo SYSTEM PRIVATE
+            ${OPENFHE_INC}
+            ${OPENFHE_INC}/core
+            ${OPENFHE_INC}/pke
+            ${OPENFHE_INC}/binfhe)
+    elseif(DEFINED OpenFHE_INCLUDE)
+        target_include_directories(AppDemo SYSTEM PRIVATE ${OpenFHE_INCLUDE})
+    endif()
 
-  # Copy all OpenFHE shared libs (including versioned .so.1) next to the executable for easy run/debug
-  add_custom_command(TARGET AppDemo POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:AppDemo>"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OPENFHE_ALL_SHARED} "$<TARGET_FILE_DIR:AppDemo>"
-    COMMENT "Copying OpenFHE shared libraries (with symlinks) next to AppDemo")
+    message(STATUS "OpenFHE found via find_package (v${BASE_OPENFHE_VERSION})")
 else()
-  message(WARNING "Could not find OpenFHE libraries in ${OPENFHE_PREFIX}/lib. Ensure you installed OpenFHE.")
+    # Fallback: manual search when find_package fails (e.g. Windows where .so targets don't exist)
+    message(STATUS "OpenFHE find_package failed, falling back to manual search")
+
+    # Include dirs — prefer installed layout, fall back to source layout
+    if(EXISTS "${OPENFHE_PREFIX}/include/openfhe/pke/openfhe.h")
+        set(OPENFHE_INC "${OPENFHE_PREFIX}/include/openfhe")
+        target_include_directories(AppDemo SYSTEM PRIVATE
+            ${OPENFHE_INC}
+            ${OPENFHE_INC}/core
+            ${OPENFHE_INC}/pke
+            ${OPENFHE_INC}/binfhe)
+    else()
+        set(OPENFHE_SRC "${OPENFHE_PREFIX}/src")
+        target_include_directories(AppDemo SYSTEM PRIVATE
+            ${OPENFHE_SRC}/pke/include
+            ${OPENFHE_SRC}/pke/include/scheme
+            ${OPENFHE_SRC}/pke/include/scheme/bfvrns
+            ${OPENFHE_SRC}/pke/include/scheme/bgvrns
+            ${OPENFHE_SRC}/pke/include/scheme/ckksrns
+            ${OPENFHE_SRC}/pke/include/schemebase
+            ${OPENFHE_SRC}/pke/include/schemelet
+            ${OPENFHE_SRC}/pke/include/schemerns
+            ${OPENFHE_SRC}/pke/include/key
+            ${OPENFHE_SRC}/pke/include/keyswitch
+            ${OPENFHE_SRC}/pke/include/encoding
+            ${OPENFHE_SRC}/core/include
+            ${OPENFHE_SRC}/core/include/lattice
+            ${OPENFHE_SRC}/core/include/lattice/hal
+            ${OPENFHE_SRC}/core/include/lattice/hal/default
+            ${OPENFHE_SRC}/core/include/math
+            ${OPENFHE_SRC}/core/include/math/hal
+            ${OPENFHE_SRC}/core/include/math/hal/bigintdyn
+            ${OPENFHE_SRC}/core/include/math/hal/bigintfxd
+            ${OPENFHE_SRC}/core/include/math/hal/bigintntl
+            ${OPENFHE_SRC}/core/include/math/hal/intnat
+            ${OPENFHE_SRC}/core/include/utils
+            ${OPENFHE_SRC}/core/include/utils/blockAllocator
+            ${OPENFHE_SRC}/core/include/utils/prng
+            ${OPENFHE_SRC}/binfhe/include)
+    endif()
+
+    find_library(OPENFHE_CORE  NAMES OPENFHEcore  PATHS "${OPENFHE_PREFIX}/lib")
+    find_library(OPENFHE_PKE   NAMES OPENFHEpke   PATHS "${OPENFHE_PREFIX}/lib")
+    find_library(OPENFHE_BINFHE NAMES OPENFHEbinfhe PATHS "${OPENFHE_PREFIX}/lib")
+
+    if(OPENFHE_CORE AND OPENFHE_PKE AND OPENFHE_BINFHE)
+        target_link_libraries(AppDemo PRIVATE ${OPENFHE_PKE} ${OPENFHE_CORE} ${OPENFHE_BINFHE})
+    else()
+        message(WARNING "Could not find OpenFHE libraries in ${OPENFHE_PREFIX}/lib")
+    endif()
 endif()
 
+# ── OpenMP ─────────────────────────────────────────────────────────────
 find_package(OpenMP QUIET)
 if(OpenMP_CXX_FOUND)
-  target_link_libraries(AppDemo PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(AppDemo PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
-# Basic warnings
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-  target_compile_options(AppDemo PRIVATE -Wall -Wextra -Wpedantic)
-elseif (MSVC)
-  target_compile_options(AppDemo PRIVATE /W4 /permissive-)
-  target_compile_definitions(AppDemo PRIVATE _CRT_SECURE_NO_WARNINGS)
+# ── Compiler warnings ─────────────────────────────────────────────────
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(AppDemo PRIVATE -Wall -Wextra -Wpedantic)
+elseif(MSVC)
+    target_compile_options(AppDemo PRIVATE /W4 /permissive-)
+    target_compile_definitions(AppDemo PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
-# rpath so binary can run without setting LD_LIBRARY_PATH after install
-# use escaped $ORIGIN to avoid shell/env expansion during link
-set(CMAKE_BUILD_RPATH "\$ORIGIN;${OPENFHE_PREFIX}/lib")
-set_target_properties(AppDemo PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib;${OPENFHE_PREFIX}/lib")
-# Also force rpath on the target to ensure loader picks libs from executable dir (and prefix) when F5/run
+# ── RPATH (Linux only) ────────────────────────────────────────────────
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  # 【待验证】设置了--disable-new-dtags就使用RPATH不是RUNPATH了，然后之后不需要设置patchelf
-  target_link_options(AppDemo PRIVATE "-Wl,--disable-new-dtags" "-Wl,-rpath,\$ORIGIN" "-Wl,-rpath,${OPENFHE_PREFIX}/lib")
-  # target_link_options(AppDemo PRIVATE "-Wl,-rpath,\$ORIGIN" "-Wl,-rpath,${OPENFHE_PREFIX}/lib")
+    set(CMAKE_BUILD_RPATH "${OPENFHE_PREFIX}/lib")
+    set_target_properties(AppDemo PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
+    target_link_options(AppDemo PRIVATE
+        "-Wl,--disable-new-dtags"
+        "-Wl,-rpath,$ORIGIN"
+        "-Wl,-rpath,${OPENFHE_PREFIX}/lib")
 endif()
 
 install(TARGETS AppDemo RUNTIME DESTINATION bin)
