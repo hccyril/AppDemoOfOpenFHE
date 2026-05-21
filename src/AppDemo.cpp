@@ -11,6 +11,7 @@
 // Forward declaration of experiment classes
 void runtest1();
 void runtest2();
+void SimpleBootstrapExample();
 
 namespace {
 
@@ -100,7 +101,7 @@ int main(int argc, char* argv[]) {
 #ifndef NDEBUG
     // Specify target test ID here directly during debugging
     constexpr bool kIsDebugBuild = true;
-    constexpr int kDebugDefaultTestId = 1;
+	constexpr int kDebugDefaultTestId = 3; // <-- Set this to the desired test ID for debug builds
 #else
     constexpr bool kIsDebugBuild = false;
 #endif
@@ -118,6 +119,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Select test to run:" << std::endl;
         std::cout << "  1: Test1 (Simple BFVRNS)" << std::endl;
         std::cout << "  2: Test2 (BFVRNS with multiple parameters)" << std::endl;
+		std::cout << "  3: Test3 (CKKS Bootstrap Example)" << std::endl;
         std::cout << "Enter test id (default=1): ";
         if (!(std::cin >> t)) {
             std::cerr << "Invalid input, using default (1)" << std::endl;
@@ -136,6 +138,10 @@ int main(int argc, char* argv[]) {
         case 2:
             std::cout << "\nRunning Test 2: Test2 (BFVRNS with multiple parameters)" << std::endl;
             runtest2();
+            break;
+        case 3:
+            std::cout << "\nRunning Test 3: Test3 (CKKS Bootstrap Example)" << std::endl;
+            SimpleBootstrapExample();
             break;
         default:
             std::cerr << "Unknown test id: " << t << std::endl;
