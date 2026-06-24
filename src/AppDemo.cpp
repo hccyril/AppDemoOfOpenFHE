@@ -12,6 +12,9 @@
 void runtest1();
 void runtest2();
 
+// mlwe demo
+int mlwe_demo();
+
 namespace {
 
 bool IsValidOutputFileName(const std::string& fileName) {
@@ -118,6 +121,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Select test to run:" << std::endl;
         std::cout << "  1: Test1 (Simple BFVRNS)" << std::endl;
         std::cout << "  2: Test2 (BFVRNS with multiple parameters)" << std::endl;
+        std::cout << "  3: MLWE Demo" << std::endl;
         std::cout << "Enter test id (default=1): ";
         if (!(std::cin >> t)) {
             std::cerr << "Invalid input, using default (1)" << std::endl;
@@ -136,6 +140,10 @@ int main(int argc, char* argv[]) {
         case 2:
             std::cout << "\nRunning Test 2: Test2 (BFVRNS with multiple parameters)" << std::endl;
             runtest2();
+            break;
+        case 3:
+            std::cout << "\nRunning Test 3: MLWE Demo" << std::endl;
+            exitCode = mlwe_demo();
             break;
         default:
             std::cerr << "Unknown test id: " << t << std::endl;

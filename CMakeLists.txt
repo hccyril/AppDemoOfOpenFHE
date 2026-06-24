@@ -23,6 +23,8 @@ add_executable(AppDemo
     src/AppDemo.cpp
     src/test1.cpp
     src/test2.cpp
+    src/mlwe.cpp
+    src/mlwe_demo.cpp
 )
 
 target_include_directories(AppDemo PRIVATE ${CMAKE_SOURCE_DIR}/include)
