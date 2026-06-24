@@ -42,9 +42,20 @@
 #include <string>
 #include <vector>
 // OpenFHE 头文件
-#include "openfhecore.h"          // 核心数据类型（NativeInteger 等）
-#include "lattice/lat-defaults.h" // NativePoly、ILParams2N 等多项式环默认实现
-#include "math/nbtheory.h"        // 数论工具：FirstPrime、RootOfUnity 等
+//
+// 说明：这里统一使用伞形头 pke/openfhe.h（与 common.h / test1.cpp 等项目其余代码一致），
+// 它会传递包含 core/openfhecore.h，从而提供本模块所需的全部稳定公开 API：
+//   NativePoly、ILParams2N、RingElement::Integer(NativeInteger)、RootOfUnity、
+//   usint、COEFFICIENT/EVALUATION、SetValueAtIndex、SetFormat、GetLength、
+//   operator[]、GetModulus、ConvertToInt 等。
+//
+// 不直接包含 lattice/lat-defaults.h、math/nbtheory.h 等底层子模块路径的原因：
+// 这些是「源码树布局」路径，仅在 OpenFHE 源码内部目录结构中成立。在已安装的
+// 头文件布局（find_package 找到的 .../include/openfhe/{core,pke,binfhe}）下，
+// lattice/lat-defaults.h 实际位于 core/lattice/hal/default/lat-defaults.h，
+// 直接 #include "lattice/lat-defaults.h" 会导致 "No such file or directory" 编译失败。
+// 伞形头屏蔽了这些布局差异，是跨版本/跨安装方式可移植的做法。
+#include "pke/openfhe.h"
 
 namespace mlwe {
 
