@@ -86,7 +86,7 @@ cd ../
 ## 4. 构建示例应用
 配置：
 ```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENFHE_PREFIX=$HOME/openfhe-install/lib/OpenFHE
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENFHE_PREFIX=$HOME/openfhe-install
 ```
 构建：
 ```bash
