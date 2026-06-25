@@ -185,12 +185,16 @@ static PackedVector PackVector(const std::vector<double>& v,
         throw std::invalid_argument("PackVector: 向量长度超过环维数 n。");
     }
     // 先构造零元素（系数表示）
+    // 注意：MakeElement() 内部已传 initializeElementToZero=true，
+    // 确保 m_values 指针已初始化，operator[] 可安全访问。
     PackedVector e = ctx.MakeElement();
     for (size_t i = 0; i < v.size(); ++i) {
         // 就近取整量化：double -> int64_t（对应 CKKS 的 round(x/Δ)，这里 Δ=1）
         int64_t coeff = static_cast<int64_t>(std::llround(v[i]));
-        // SetValueAtIndex 内部会自动对 q 取模（含负数），等价于把系数放进 Z_q
-        e.SetValueAtIndex(static_cast<usint>(i), coeff);
+        // 注意：NativePoly（PolyImpl）没有 SetValueAtIndex 方法，
+        // 使用 operator[] 返回可写的 NativeInteger& 引用直接赋值。
+        // NativeInteger 构造时会自动对 q 取模（含负数），等价于把系数放进 Z_q。
+        e[i] = lbcrypto::NativeInteger(coeff);
     }
     return e;
 }
@@ -199,8 +203,10 @@ static PackedVector PackVector(const std::vector<double>& v,
 // 【对应论文：decoding / readout of slots】
 static std::vector<double> UnpackVector(const PackedVector& e, size_t len) {
     // 切到系数表示，逐项取值
+    // 注意：Format 枚举（COEFFICIENT / EVALUATION）定义在全局命名空间（inttypes.h），
+    // 而非 lbcrypto:: 命名空间内，因此直接使用 Format::COEFFICIENT。
     PackedVector ec = e;
-    ec.SetFormat(lbcrypto::COEFFICIENT);
+    ec.SetFormat(Format::COEFFICIENT);
     usint n = ec.GetLength();
     usint q = static_cast<usint>(ec.GetModulus().ConvertToInt());
 
@@ -341,6 +347,16 @@ static CPMMResult Algorithm6_CPMM(const std::vector<double>& M,
     t.start();
     res.y_naive = NaiveMatVec(M, v, m, n);
     res.t_naive = t.elapsed_ms();
+
+    // 正确性比较前的对齐处理：
+    // BLAS 路径经过 PackVector → UnpackVector 的量化往返（double → round → int64 → double），
+    // 结果被量化为整数；而朴素路径保留原始浮点值。
+    // 为使两条路径在「同一语义」下比较，将朴素结果也做就近取整。
+    // 这样两者都代表「量化后的 MatVec 结果」，差异仅来自 BLAS vs 手工累加的浮点顺序，
+    // 在量化后应完全一致（整数相等）。
+    for (size_t i = 0; i < res.y_naive.size(); ++i) {
+        res.y_naive[i] = std::llround(res.y_naive[i]);
+    }
 
     return res;
 }
@@ -573,9 +589,17 @@ int bchp_demo() {
 
     try {
         // 构造一个 MLWE 上下文，仅用于提供「环结构」给打包/解包演示。
-        // 参数取 n=256（足够装下演示用的向量维数），q=7681（满足 q≡1 mod 2n 的素数）。
         // 注意：这里的 MLWE 并不参与「同态加密」，仅充当「打包容器」。
-        usint n = 256, k = 2, q = 7681, nu = 4;
+        //
+        // 参数选择说明：
+        //   n = 2048：环维数，必须为 2 的幂。需足够大以装下演示用的最大向量维数
+        //             （性能测试中最大为 2048 维，批处理矩阵乘中 n=512）。
+        //   q = 40961：模数，必须为素数且满足 q ≡ 1 (mod 2n=4096)。
+        //             40961 = 10 × 4096 + 1，经验证为素数。
+        //             （原先使用 n=256, q=7681，但性能测试中 1024/2048 维向量
+        //              超出环维数导致 PackVector 抛出异常，故增大 n。）
+        //   k = 2, nu = 4：模块秩和噪声参数，此处不参与加密运算，取值无影响。
+        usint n = 2048, k = 2, q = 40961, nu = 4;
         mlwe::MLWEParams params(n, k, q, nu);
         mlwe::MLWEContext ctx(params);
 

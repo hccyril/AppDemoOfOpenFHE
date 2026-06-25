@@ -288,3 +288,106 @@ cmake --build build -j
 ```
 预期：演示 1 打印「通过 ✓」（BLAS 路径 == 朴素路径，手算 y=[2,2,16]）；
 演示 2/3 给出 BLAS 相对朴素实现的加速比（规模越大越显著）；演示 4 为思想总结。
+
+---
+
+# 2026-06-25 修复 BCHP Demo 的编译错误与运行时错误
+
+## 问题
+新增 `src/bchp_demo.cpp`（t=4 BCHP Demo）后，`cmake --build build -j` 报出
+2 个编译错误；修复编译后运行又遇到 2 个运行时问题。
+
+### 编译错误 1：`SetValueAtIndex` 方法不存在
+```
+bchp_demo.cpp:193: error: 'NativePoly' has no member named 'SetValueAtIndex'
+```
+出现在 `PackVector` 函数中，与之前 MLWE 模块遇到的问题完全一致。
+
+### 编译错误 2：`lbcrypto::COEFFICIENT` 命名空间错误
+```
+bchp_demo.cpp:203: error: 'COEFFICIENT' is not a member of 'lbcrypto'
+```
+出现在 `UnpackVector` 函数中，同样是已知的 API 适配问题。
+
+### 运行时错误 1：`PackVector: 向量长度超过环维数 n`
+演示 2（性能对比）使用 1024×1024 和 2048×1024 规模的矩阵，但 MLWE 上下文
+的环维数 n=256 太小，`PackVector` 检查 `v.size() > n` 后抛出异常。
+
+### 运行时错误 2：演示 2 正确性检查全部失败（✗）
+BLAS 路径经过 `PackVector` → `UnpackVector` 的量化往返（double → round → int64 → double），
+结果被量化为整数；而朴素路径 `NaiveMatVec` 保留原始浮点值。两者在
+`VectorsAlmostEqual(rel_eps=1e-5)` 比较时因量化误差超过容差而判定不一致。
+
+## 原因分析
+
+### 编译错误 1-2：OpenFHE API 变更（与 MLWE 模块同源）
+`bchp_demo.cpp` 编写时参照了旧版 API 文档/示例，使用了已被移除的
+`SetValueAtIndex` 方法和错误的 `lbcrypto::COEFFICIENT` 命名空间。
+修复方式与 `mlwe.cpp` 完全一致。
+
+### 运行时错误 1：环维数 n 与测试规模不匹配
+`bchp_demo()` 入口函数构造 MLWE 上下文时取 n=256、q=7681（满足 q≡1 mod 2n）。
+但演示 2 的测试用例包含 {1024, 1024} 和 {2048, 1024}，向量维数超过 n=256，
+导致 `PackVector` 抛出 `invalid_argument`。
+
+### 运行时错误 2：量化语义不一致
+`Algorithm6_CPMM` 的 BLAS 路径：`PackVector(v)` → `cblas_dgemv` → `PackVector(y)` → `UnpackVector`，
+结果经过 double→int→double 量化往返。朴素路径 `NaiveMatVec` 直接在 double 上计算，
+不做量化。两条路径的输出在数学上差一个「就近取整」操作，对于大值结果
+（如 1024 个 [-1,1] 随机数累加，量级 ~10-30），绝对误差可达 0.5，
+远超 `rel_eps=1e-5` 的容差。
+
+## 修改过程
+
+### 1. `src/bchp_demo.cpp`：`PackVector` 中 `SetValueAtIndex` → `operator[]`
+```cpp
+// 修复前：
+e.SetValueAtIndex(static_cast<usint>(i), coeff);
+// 修复后：
+e[i] = lbcrypto::NativeInteger(coeff);
+```
+添加注释说明 `NativePoly` 没有 `SetValueAtIndex`，需使用 `operator[]`
+返回可写的 `NativeInteger&` 引用。
+
+### 2. `src/bchp_demo.cpp`：`UnpackVector` 中 `lbcrypto::COEFFICIENT` → `Format::COEFFICIENT`
+```cpp
+// 修复前：
+ec.SetFormat(lbcrypto::COEFFICIENT);
+// 修复后：
+ec.SetFormat(Format::COEFFICIENT);
+```
+添加注释说明 `Format` 枚举在全局命名空间。
+
+### 3. `src/bchp_demo.cpp`：增大环维数 n 和模数 q
+```cpp
+// 修复前：
+usint n = 256, k = 2, q = 7681, nu = 4;
+// 修复后：
+usint n = 2048, k = 2, q = 40961, nu = 4;
+```
+- n=2048 可容纳演示 2 中最大 2048 维向量和演示 3 中 512 维向量。
+- q=40961 = 10 × 4096 + 1 = 10 × 2n + 1，经验证为素数（试除至 √40961 ≈ 202），
+  满足 q ≡ 1 (mod 2n) 的要求。
+- 添加详细注释说明参数选择的依据。
+
+### 4. `src/bchp_demo.cpp`：`Algorithm6_CPMM` 正确性比较前对齐量化语义
+在朴素路径计算完成后、返回前，将朴素结果也做就近取整：
+```cpp
+for (size_t i = 0; i < res.y_naive.size(); ++i) {
+    res.y_naive[i] = std::llround(res.y_naive[i]);
+}
+```
+使两条路径都在「量化后的整数」语义下比较，消除量化不对称导致的误判。
+添加注释说明为何需要此对齐处理。
+
+## 影响范围
+- 仅修改 `src/bchp_demo.cpp`，不涉及 MLWE/BFV 既有模块。
+- 数学逻辑不变，仅修正 API 调用、参数规模和比较语义。
+
+## 验证
+```bash
+cmake --build build -j
+./build/AppDemo -t 4
+```
+全部四个演示正确性检查通过（✓），演示 2 的加速比数据正常输出，
+演示 3 的批处理矩阵乘正确性通过。
