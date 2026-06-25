@@ -23,39 +23,22 @@ sudo apt install -y libomp-dev
 OpenFHE 安装前缀统一为：`$HOME/openfhe-install`。
 
 ---
-## 2. 获取本仓库与添加子模块（只有第一次初始化需要，已经配好子模块的可以忽略）
+## 2. 克隆OpenFHE代码仓库
+
+以下命令克隆最新完整的OpenFHE代码仓库(包括当中的子模块)
 ```bash
-# 克隆本项目（若已存在可跳过）
-git clone <YOUR_REPO_URL> AppDemoOpenFHE
-cd AppDemoOpenFHE
-
-# 添加 OpenFHE 作为浅克隆子模块（只需主分支最近一次提交）
-git submodule add --depth 1 https://github.com/openfheorg/openfhe-development openfhe
-
-# 初始化并更新递归子模块
+mkdir third-party
+cd third-party
+git clone https://github.com/openfheorg/openfhe-development
+cd openfhe-development
 git submodule update --init --recursive
-
-# 记录到版本库
-git add .gitmodules openfhe
-git commit -m "Add OpenFHE as submodule"
 ```
-可选：禁止误向上游推送（保护上游仓库）：
-```bash
-cd openfhe
-git remote set-url --push origin DISABLED
-cd ../..
-```
-
-说明：
-- 子模块源码仅用于参考或二次开发，不直接被当前 CMake 用于链接（演示采用“已安装”的 OpenFHE）。
-- 若希望直接从子模块构建而不安装，可修改本项目 `CMakeLists.txt`，将 include/link 指向子模块构建产物，这里不展开。
 
 ---
 ## 3. 构建并安装 OpenFHE（在 WSL 内）
 进入子模块目录：
-```bash
-cd ./openfhe
-```
+ - 也就是上一步骤进入到的`openfhe-development`目录下
+
 配置（关闭示例、单元测试与基准，Release 模式）：
 ```bash
 cmake -S . -B build -G Ninja \
@@ -227,3 +210,36 @@ export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
 本演示代码保持与 OpenFHE 兼容的开源使用方式（请参阅上游 OpenFHE 仓库的 LICENSE）。
 
 若需进一步功能（密钥切换、Galois 旋转、CKKS 支持等），请参考 OpenFHE 官方文档与示例
+
+---
+# Archives (备份only, 可删除)
+
+_旧版本中关于如何创建子模块的说明_
+
+---
+## 2. 获取本仓库与添加子模块（只有第一次初始化需要，已经配好子模块的可以忽略）
+```bash
+# 克隆本项目（若已存在可跳过）
+git clone <YOUR_REPO_URL> AppDemoOpenFHE
+cd AppDemoOpenFHE
+
+# 添加 OpenFHE 作为浅克隆子模块（只需主分支最近一次提交）
+git submodule add --depth 1 https://github.com/openfheorg/openfhe-development openfhe
+
+# 初始化并更新递归子模块
+git submodule update --init --recursive
+
+# 记录到版本库
+git add .gitmodules openfhe
+git commit -m "Add OpenFHE as submodule"
+```
+可选：禁止误向上游推送（保护上游仓库）：
+```bash
+cd openfhe
+git remote set-url --push origin DISABLED
+cd ../..
+```
+
+说明：
+- 子模块源码仅用于参考或二次开发，不直接被当前 CMake 用于链接（演示采用“已安装”的 OpenFHE）。
+- 若希望直接从子模块构建而不安装，可修改本项目 `CMakeLists.txt`，将 include/link 指向子模块构建产物，这里不展开。
