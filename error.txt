@@ -1,0 +1,161 @@
+[huang@archserver-68 AppDemoOfOpenFHE]$ cmake --build build -j
+[1/3] Building CXX object CMakeFiles/AppDemo.dir/src/mlwe_demo.cpp.o
+FAILED: [code=1] CMakeFiles/AppDemo.dir/src/mlwe_demo.cpp.o
+/usr/bin/c++  -I/home/huang/GIT/AppDemoOfOpenFHE/include -isystem /home/huang/openfhe-install/include/openfhe -isystem /home/huang/openfhe-install/include/openfhe/core -isystem /home/huang/openfhe-install/include/openfhe/pke -isystem /home/huang/openfhe-install/include/openfhe/binfhe -O3 -DNDEBUG -std=gnu++17 -Wall -Wextra -Wpedantic -fopenmp -MD -MT CMakeFiles/AppDemo.dir/src/mlwe_demo.cpp.o -MF CMakeFiles/AppDemo.dir/src/mlwe_demo.cpp.o.d -o CMakeFiles/AppDemo.dir/src/mlwe_demo.cpp.o -c /home/huang/GIT/AppDemoOfOpenFHE/src/mlwe_demo.cpp
+In file included from /home/huang/GIT/AppDemoOfOpenFHE/src/mlwe_demo.cpp:18:
+/home/huang/GIT/AppDemoOfOpenFHE/include/mlwe.h:137:21: error: ‘ILParams2N’ in namespace ‘lbcrypto’ does not name a type; did you mean ‘ILParams’?
+  137 |     const lbcrypto::ILParams2N& GetElementParams() const {
+      |                     ^~~~~~~~~~
+      |                     ILParams
+/home/huang/GIT/AppDemoOfOpenFHE/include/mlwe.h:172:31: error: ‘ILParams2N’ is not a member of ‘lbcrypto’; did you mean ‘ILParams’?
+  172 |     std::shared_ptr<lbcrypto::ILParams2N> m_elemParams;
+      |                               ^~~~~~~~~~
+      |                               ILParams
+/home/huang/GIT/AppDemoOfOpenFHE/include/mlwe.h:172:41: error: template argument 1 is invalid
+  172 |     std::shared_ptr<lbcrypto::ILParams2N> m_elemParams;
+      |                                         ^
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe_demo.cpp: In function ‘int mlwe_demo()’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe_demo.cpp:164:15: error: redeclaration of ‘usint q’
+  164 |         usint q = ctx->GetParams().q;
+      |               ^
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe_demo.cpp:93:15: note: ‘usint q’ previously declared here
+   93 |         usint q = 7681;   // 7681 = 60*128 + 1, 素数, 满足 q ≡ 1 (mod 2n)
+      |               ^
+[2/3] Building CXX object CMakeFiles/AppDemo.dir/src/mlwe.cpp.o
+FAILED: [code=1] CMakeFiles/AppDemo.dir/src/mlwe.cpp.o
+/usr/bin/c++  -I/home/huang/GIT/AppDemoOfOpenFHE/include -isystem /home/huang/openfhe-install/include/openfhe -isystem /home/huang/openfhe-install/include/openfhe/core -isystem /home/huang/openfhe-install/include/openfhe/pke -isystem /home/huang/openfhe-install/include/openfhe/binfhe -O3 -DNDEBUG -std=gnu++17 -Wall -Wextra -Wpedantic -fopenmp -MD -MT CMakeFiles/AppDemo.dir/src/mlwe.cpp.o -MF CMakeFiles/AppDemo.dir/src/mlwe.cpp.o.d -o CMakeFiles/AppDemo.dir/src/mlwe.cpp.o -c /home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp
+In file included from /home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:20:
+/home/huang/GIT/AppDemoOfOpenFHE/include/mlwe.h:137:21: error: ‘ILParams2N’ in namespace ‘lbcrypto’ does not name a type; did you mean ‘ILParams’?
+  137 |     const lbcrypto::ILParams2N& GetElementParams() const {
+      |                     ^~~~~~~~~~
+      |                     ILParams
+/home/huang/GIT/AppDemoOfOpenFHE/include/mlwe.h:172:31: error: ‘ILParams2N’ is not a member of ‘lbcrypto’; did you mean ‘ILParams’?
+  172 |     std::shared_ptr<lbcrypto::ILParams2N> m_elemParams;
+      |                               ^~~~~~~~~~
+      |                               ILParams
+/home/huang/GIT/AppDemoOfOpenFHE/include/mlwe.h:172:41: error: template argument 1 is invalid
+  172 |     std::shared_ptr<lbcrypto::ILParams2N> m_elemParams;
+      |                                         ^
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp: In constructor ‘mlwe::MLWEContext::MLWEContext(const mlwe::MLWEParams&)’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:92:47: error: ‘ILParams2N’ is not a member of ‘lbcrypto’; did you mean ‘ILParams’?
+   92 |     m_elemParams = std::make_shared<lbcrypto::ILParams2N>(
+      |                                               ^~~~~~~~~~
+      |                                               ILParams
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:92:58: error: no matching function for call to ‘make_shared<<expression error> >(usint&, lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >::Integer&, lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >::Integer&)’
+   92 |     m_elemParams = std::make_shared<lbcrypto::ILParams2N>(
+      |                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+   93 |         cyclotomicOrder, modulus, root);
+      |         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  • there is 1 candidate
+In file included from /usr/include/c++/16.1.1/memory:82,
+                 from /home/huang/openfhe-install/include/openfhe/pke/openfhe.h:36,
+                 from /home/huang/GIT/AppDemoOfOpenFHE/include/mlwe.h:58:
+    • candidate 1: ‘template<class _Tp, class ... _Args> std::shared_ptr<typename std::enable_if<(! std::is_array<_Tp>::value), _Tp>::type> std::make_shared(_Args&& ...)’
+      /usr/include/c++/16.1.1/bits/shared_ptr.h:1061:5:
+       1061 |     make_shared(_Args&&... __args)
+            |     ^~~~~~~~~~~
+      • template argument deduction/substitution failed:
+        • error: template argument 1 is invalid
+          /home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:92:58:
+             92 |     m_elemParams = std::make_shared<lbcrypto::ILParams2N>(
+                |                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+             93 |         cyclotomicOrder, modulus, root);
+                |         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp: In member function ‘mlwe::RingElement mlwe::MLWEContext::MakeElement() const’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:111:48: error: ‘COEFFICIENT’ is not a member of ‘lbcrypto’; did you mean ‘COEFFICIENT’?
+  111 |     return RingElement(m_elemParams, lbcrypto::COEFFICIENT);
+      |                                                ^~~~~~~~~~~
+In file included from /home/huang/openfhe-install/include/openfhe/core/math/hal/vector.h:39,
+                 from /home/huang/openfhe-install/include/openfhe/core/math/math-hal.h:47,
+                 from /home/huang/openfhe-install/include/openfhe/core/lattice/hal/elemparams.h:39,
+                 from /home/huang/openfhe-install/include/openfhe/core/lattice/hal/default/ilparams.h:39,
+                 from /home/huang/openfhe-install/include/openfhe/core/lattice/hal/lat-backend.h:49,
+                 from /home/huang/openfhe-install/include/openfhe/core/lattice/lat-hal.h:35,
+                 from /home/huang/openfhe-install/include/openfhe/core/openfhecore.h:39,
+                 from /home/huang/openfhe-install/include/openfhe/pke/openfhe.h:40:
+/home/huang/openfhe-install/include/openfhe/core/utils/inttypes.h:65:31: note: ‘COEFFICIENT’ declared here
+   65 | enum Format { EVALUATION = 0, COEFFICIENT = 1 };
+      |                               ^~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp: In member function ‘mlwe::RingElement mlwe::MLWEContext::MakeConstantElement(int64_t) const’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:122:43: error: ‘COEFFICIENT’ is not a member of ‘lbcrypto’; did you mean ‘COEFFICIENT’?
+  122 |     RingElement e(m_elemParams, lbcrypto::COEFFICIENT);
+      |                                           ^~~~~~~~~~~
+/home/huang/openfhe-install/include/openfhe/core/utils/inttypes.h:65:31: note: ‘COEFFICIENT’ declared here
+   65 | enum Format { EVALUATION = 0, COEFFICIENT = 1 };
+      |                               ^~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:123:7: error: ‘using mlwe::RingElement = using lbcrypto::NativePoly = class lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >’ {aka ‘class lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >’} has no member named ‘SetValueAtIndex’
+  123 |     e.SetValueAtIndex(0, c);
+      |       ^~~~~~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp: In member function ‘mlwe::RingElement mlwe::MLWEContext::SampleGaussian() const’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:139:43: error: ‘COEFFICIENT’ is not a member of ‘lbcrypto’; did you mean ‘COEFFICIENT’?
+  139 |     RingElement e(m_elemParams, lbcrypto::COEFFICIENT);
+      |                                           ^~~~~~~~~~~
+/home/huang/openfhe-install/include/openfhe/core/utils/inttypes.h:65:31: note: ‘COEFFICIENT’ declared here
+   65 | enum Format { EVALUATION = 0, COEFFICIENT = 1 };
+      |                               ^~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:143:11: error: ‘using mlwe::RingElement = using lbcrypto::NativePoly = class lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >’ {aka ‘class lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >’} has no member named ‘SetValueAtIndex’
+  143 |         e.SetValueAtIndex(i, v);
+      |           ^~~~~~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp: In member function ‘mlwe::RingElement mlwe::MLWEContext::SampleUniform() const’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:156:43: error: ‘COEFFICIENT’ is not a member of ‘lbcrypto’; did you mean ‘COEFFICIENT’?
+  156 |     RingElement e(m_elemParams, lbcrypto::COEFFICIENT);
+      |                                           ^~~~~~~~~~~
+/home/huang/openfhe-install/include/openfhe/core/utils/inttypes.h:65:31: note: ‘COEFFICIENT’ declared here
+   65 | enum Format { EVALUATION = 0, COEFFICIENT = 1 };
+      |                               ^~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:158:11: error: ‘using mlwe::RingElement = using lbcrypto::NativePoly = class lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >’ {aka ‘class lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >’} has no member named ‘SetValueAtIndex’
+  158 |         e.SetValueAtIndex(i, dist(m_rng));
+      |           ^~~~~~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp: In function ‘std::vector<long int> mlwe::ElementToVector(const RingElement&)’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:323:32: error: ‘COEFFICIENT’ is not a member of ‘lbcrypto’; did you mean ‘COEFFICIENT’?
+  323 |     eCoeff.SetFormat(lbcrypto::COEFFICIENT);
+      |                                ^~~~~~~~~~~
+/home/huang/openfhe-install/include/openfhe/core/utils/inttypes.h:65:31: note: ‘COEFFICIENT’ declared here
+   65 | enum Format { EVALUATION = 0, COEFFICIENT = 1 };
+      |                               ^~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp: In function ‘mlwe::RingElement mlwe::VectorToElement(const std::vector<long int>&, const MLWEContext&)’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:342:11: error: ‘using mlwe::RingElement = using lbcrypto::NativePoly = class lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >’ {aka ‘class lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >’} has no member named ‘SetValueAtIndex’
+  342 |         e.SetValueAtIndex(i, coeffs[i]);
+      |           ^~~~~~~~~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp: In function ‘std::string mlwe::ElementToString(const RingElement&, bool)’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:371:26: error: no matching function for call to ‘max(int64_t&, long long int)’
+  371 |         maxAbs = std::max(maxAbs, std::llabs(s));
+      |                  ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~
+  • there are 4 candidates
+In file included from /usr/include/c++/16.1.1/bits/specfun.h:44,
+                 from /usr/include/c++/16.1.1/cmath:3913,
+                 from /usr/include/c++/16.1.1/random:45,
+                 from /home/huang/GIT/AppDemoOfOpenFHE/include/mlwe.h:41:
+    • candidate 1: ‘template<class _Tp> constexpr const _Tp& std::max(const _Tp&, const _Tp&)’
+      /usr/include/c++/16.1.1/bits/stl_algobase.h:256:5:
+        256 |     max(const _Tp& __a, const _Tp& __b)
+            |     ^~~
+      • template argument deduction/substitution failed:
+        •   deduced conflicting types for parameter ‘const _Tp’ (‘long int’ and ‘long long int’)
+          /home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:371:26:
+            371 |         maxAbs = std::max(maxAbs, std::llabs(s));
+                |                  ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~
+    • candidate 2: ‘template<class _Tp, class _Compare> constexpr const _Tp& std::max(const _Tp&, const _Tp&, _Compare)’
+      /usr/include/c++/16.1.1/bits/stl_algobase.h:302:5:
+        302 |     max(const _Tp& __a, const _Tp& __b, _Compare __comp)
+            |     ^~~
+      • candidate expects 3 arguments, 2 provided
+In file included from /usr/include/c++/16.1.1/algorithm:63,
+                 from /home/huang/openfhe-install/include/openfhe/core/math/hal/intnat/mubintvecnat.h:48,
+                 from /home/huang/openfhe-install/include/openfhe/core/math/hal/nativeintbackend.h:37,
+                 from /home/huang/openfhe-install/include/openfhe/core/math/math-hal.h:49:
+    • candidate 3: ‘template<class _Tp> constexpr _Tp std::max(initializer_list<_Tp>)’
+      /usr/include/c++/16.1.1/bits/stl_algo.h:5746:5:
+       5746 |     max(initializer_list<_Tp> __l)
+            |     ^~~
+      • candidate expects 1 argument, 2 provided
+    • candidate 4: ‘template<class _Tp, class _Compare> constexpr _Tp std::max(initializer_list<_Tp>, _Compare)’
+      /usr/include/c++/16.1.1/bits/stl_algo.h:5756:5:
+       5756 |     max(initializer_list<_Tp> __l, _Compare __comp)
+            |     ^~~
+      • template argument deduction/substitution failed:
+        •   mismatched types ‘std::initializer_list<_Tp>’ and ‘long int’
+          /home/huang/GIT/AppDemoOfOpenFHE/src/mlwe.cpp:371:26:
+            371 |         maxAbs = std::max(maxAbs, std::llabs(s));
+                |                  ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~
+ninja: build stopped: subcommand failed.
