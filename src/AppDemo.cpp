@@ -15,6 +15,9 @@ void runtest2();
 // mlwe demo
 int mlwe_demo();
 
+// bchp demo: 论文《Fast Homomorphic Linear Algebra with BLAS》(arXiv:2503.16080) 复现
+int bchp_demo();
+
 namespace {
 
 bool IsValidOutputFileName(const std::string& fileName) {
@@ -122,6 +125,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  1: Test1 (Simple BFVRNS)" << std::endl;
         std::cout << "  2: Test2 (BFVRNS with multiple parameters)" << std::endl;
         std::cout << "  3: MLWE Demo" << std::endl;
+        std::cout << "  4: BCHP Demo (Homomorphic Linear Algebra with BLAS)" << std::endl;
         std::cout << "Enter test id (default=1): ";
         if (!(std::cin >> t)) {
             std::cerr << "Invalid input, using default (1)" << std::endl;
@@ -144,6 +148,10 @@ int main(int argc, char* argv[]) {
         case 3:
             std::cout << "\nRunning Test 3: MLWE Demo" << std::endl;
             exitCode = mlwe_demo();
+            break;
+        case 4:
+            std::cout << "\nRunning Test 4: BCHP Demo (Homomorphic Linear Algebra with BLAS)" << std::endl;
+            exitCode = bchp_demo();
             break;
         default:
             std::cerr << "Unknown test id: " << t << std::endl;

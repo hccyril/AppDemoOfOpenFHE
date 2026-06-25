@@ -134,7 +134,11 @@ public:
     const MLWEParams& GetParams() const { return m_params; }
 
     // 获取环参数（用于构造新的 RingElement）
-    const lbcrypto::ILParams2N& GetElementParams() const {
+    // 获取环参数（用于构造新的 RingElement）
+    // 注意：OpenFHE 中 ILParamsImpl<NativeInteger> 是 NativePoly 对应的环参数类型，
+    // 旧版本曾以 ILParams2N 为别名，但当前版本（v1.4.2）已不再提供该别名，
+    // 因此直接使用模板实例化形式 ILParamsImpl<NativeInteger>。
+    const lbcrypto::ILParamsImpl<lbcrypto::NativeInteger>& GetElementParams() const {
         return *m_elemParams;
     }
 
@@ -164,12 +168,24 @@ public:
     //   - 用于公钥矩阵 A 的元素。
     RingElement SampleUniform() const;
 
+    // 将环元素切换到 EVALUATION（NTT）格式，用于多项式乘法。
+    // OpenFHE 的 PolyImpl::operator* 要求两个操作数都在 EVALUATION 格式下，
+    // 而采样/构造得到的元素通常在 COEFFICIENT 格式。
+    // 本方法通过 SetFormat 内部调用 NTT 变换完成格式切换。
+    // 返回值为副本，不修改原始元素。
+    static RingElement ToEval(const RingElement& e) {
+        RingElement r = e;
+        r.SetFormat(Format::EVALUATION);
+        return r;
+    }
+
 private:
     MLWEParams m_params;
     // 环参数：描述 R_q（模数 q、维数 n、2n 次单位根）
     // 注意：使用 shared_ptr 持有，因为 OpenFHE 的 RingElement 内部以
-    // shared_ptr<const ILParams2N> 引用环参数。
-    std::shared_ptr<lbcrypto::ILParams2N> m_elemParams;
+    // shared_ptr<const ILParamsImpl<NativeInteger>> 引用环参数。
+    // 当前版本（v1.4.2）中 ILParams2N 别名已移除，需直接使用模板实例化形式。
+    std::shared_ptr<lbcrypto::ILParamsImpl<lbcrypto::NativeInteger>> m_elemParams;
 
     // C++11 随机数引擎（用于高斯与均匀系数采样）
     // 使用 mutable 因为采样方法是 const 逻辑操作，但引擎内部状态会改变。

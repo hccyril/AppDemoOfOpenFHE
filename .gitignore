@@ -2,6 +2,7 @@
 .vs/
 out/
 build/
+build-debug/
 
 # Prerequisites
 *.d

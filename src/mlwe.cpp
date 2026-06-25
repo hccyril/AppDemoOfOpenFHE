@@ -86,10 +86,11 @@ MLWEContext::MLWEContext(const MLWEParams& params)
     typename RingElement::Integer root =
         lbcrypto::RootOfUnity(cyclotomicOrder, modulus);
 
-    // make_shared 创建 ILParams2N 对象。NativePoly 在构造时会以
-    // shared_ptr<const ILParams2N> 的形式引用它，因此对象生命周期由
+    // make_shared 创建 ILParamsImpl<NativeInteger> 对象。NativePoly 在构造时会以
+    // shared_ptr<const ILParamsImpl<NativeInteger>> 的形式引用它，因此对象生命周期由
     // shared_ptr 管理，安全。
-    m_elemParams = std::make_shared<lbcrypto::ILParams2N>(
+    // 注意：当前 OpenFHE v1.4.2 已移除 ILParams2N 别名，需直接使用模板实例化形式。
+    m_elemParams = std::make_shared<lbcrypto::ILParamsImpl<lbcrypto::NativeInteger>>(
         cyclotomicOrder, modulus, root);
 
     // ------------------------------------------------------------
@@ -108,7 +109,12 @@ MLWEContext::MLWEContext(const MLWEParams& params)
 RingElement MLWEContext::MakeElement() const {
     // 用环参数构造一个零元素，并显式以系数表示存储。
     // Format::COEFFICIENT 表示系数向量形式（与 EVALUATION/NTT 域相对）。
-    return RingElement(m_elemParams, lbcrypto::COEFFICIENT);
+    // 注意：Format 枚举（COEFFICIENT / EVALUATION）定义在全局命名空间（inttypes.h），
+    // 而非 lbcrypto:: 命名空间内，因此直接使用 Format::COEFFICIENT。
+    // 注意：PolyImpl 构造函数的第三个参数 initializeElementToZero 默认为 false，
+    // 此时内部 m_values 指针为空，访问 operator[] 会导致段错误。
+    // 必须传 true 以初始化系数向量为全零。
+    return RingElement(m_elemParams, Format::COEFFICIENT, true);
 }
 
 //------------------------------------------------------------------------------
@@ -119,8 +125,13 @@ RingElement MLWEContext::MakeConstantElement(int64_t c) const {
     //   1. 构造零元素（系数表示）；
     //   2. 把第 0 个系数（即常数项，对应 1∈R_q 的系数）置为 c；
     //   3. OpenFHE 内部会自动对 c 模 q 归一化（含负数）。
-    RingElement e(m_elemParams, lbcrypto::COEFFICIENT);
-    e.SetValueAtIndex(0, c);
+    // 注意：第三个参数 true 表示初始化内部系数向量为全零，
+    // 否则 m_values 指针为空，访问 operator[] 会导致段错误。
+    RingElement e(m_elemParams, Format::COEFFICIENT, true);
+    // 注意：NativePoly 没有 SetValueAtIndex 方法，但 operator[] 返回可写的
+    // Integer& 引用（即 NativeInteger&），可直接赋值。
+    // 将 int64_t 转为 NativeInteger 类型后赋值。
+    e[0] = lbcrypto::NativeInteger(c);
     return e;
 }
 
@@ -136,11 +147,15 @@ RingElement MLWEContext::MakeConstantElement(int64_t c) const {
 //   API，跨版本可移植。σ 取自 m_params.nu。
 RingElement MLWEContext::SampleGaussian() const {
     std::normal_distribution<double> dist(0.0, static_cast<double>(m_params.nu));
-    RingElement e(m_elemParams, lbcrypto::COEFFICIENT);
+    // 注意：第三个参数 true 表示初始化内部系数向量为全零，
+    // 否则 m_values 指针为空，访问 operator[] 会导致段错误。
+    RingElement e(m_elemParams, Format::COEFFICIENT, true);
     for (usint i = 0; i < m_params.n; ++i) {
         double r = dist(m_rng);
         int64_t v = static_cast<int64_t>(std::llround(r));
-        e.SetValueAtIndex(i, v);
+        // 注意：NativePoly 没有 SetValueAtIndex 方法，使用 operator[] 赋值。
+        // 将 int64_t 转为 NativeInteger 类型。
+        e[i] = lbcrypto::NativeInteger(v);
     }
     return e;
 }
@@ -153,9 +168,13 @@ RingElement MLWEContext::SampleGaussian() const {
 RingElement MLWEContext::SampleUniform() const {
     std::uniform_int_distribution<int64_t> dist(
         0, static_cast<int64_t>(m_params.q - 1));
-    RingElement e(m_elemParams, lbcrypto::COEFFICIENT);
+    // 注意：第三个参数 true 表示初始化内部系数向量为全零，
+    // 否则 m_values 指针为空，访问 operator[] 会导致段错误。
+    RingElement e(m_elemParams, Format::COEFFICIENT, true);
     for (usint i = 0; i < m_params.n; ++i) {
-        e.SetValueAtIndex(i, dist(m_rng));
+        // 注意：NativePoly 没有 SetValueAtIndex 方法，使用 operator[] 赋值。
+        // 将 int64_t 转为 NativeInteger 类型。
+        e[i] = lbcrypto::NativeInteger(dist(m_rng));
     }
     return e;
 }
@@ -197,15 +216,27 @@ void MLWEScheme::KeyGen(MLWEPublicKey& pk, MLWESecretKey& sk) const {
 
     // --- 步骤 3：计算 b = A·s + e ∈ R_q^k ---
     //   b_i = Σ_{j=0}^{k-1} A_{ij} * s_j + e_i
-    // 注意：这里的多项式乘法 * 在 R_q 中进行（自动模 x^n+1 与 q）。
+    // 注意：OpenFHE 的 PolyImpl::operator* 要求操作数在 EVALUATION（NTT）格式下，
+    // 而采样得到的元素在 COEFFICIENT 格式。因此在乘法前需通过 ToEval 切换到 NTT 域，
+    // 乘法结果也在 EVALUATION 域；加法 e_i 前需切回 COEFFICIENT 域以匹配格式。
     pk.b.assign(k, m_ctx->MakeElement());
     for (usint i = 0; i < k; ++i) {
-        RingElement acc = m_ctx->MakeElement();  // 累加器，初值 0
+        RingElement acc = m_ctx->MakeElement();  // 累加器，初值 0（COEFF 格式）
+        // 关键修复：在乘法循环前，将 acc 显式切换到 EVALUATION 格式。
+        // 原因：PolyImpl::operator+= 不更新 m_format 标记。若 acc 的 m_format
+        // 保持 COEFFICIENT，后续 SetFormat(COEFFICIENT) 会误判为"已是 COEFF"
+        // 而跳过 INTT，导致系数值为 NTT 域的原始值（巨大数字）。
+        // 零多项式的 NTT 仍为零，因此数值不变，仅更新 m_format 标记。
+        acc.SetFormat(Format::EVALUATION);
         for (usint j = 0; j < k; ++j) {
-            // 累加 A_{ij} * s_j，每次都是一次 R_q 中的环乘 + 环加
-            acc += pk.A[i][j] * sk[j];
+            // 将 A_{ij} 和 s_j 切换到 EVALUATION 格式后做 NTT 域乘法
+            acc += MLWEContext::ToEval(pk.A[i][j]) * MLWEContext::ToEval(sk[j]);
+            // 此时 acc 的数据和 m_format 均为 EVALUATION，格式一致
         }
-        pk.b[i] = acc + e[i];  // 加噪声 e_i
+        // 将累加结果从 EVALUATION 切回 COEFFICIENT（执行 INTT），
+        // 以便与噪声 e_i（COEFF 格式）相加
+        acc.SetFormat(Format::COEFFICIENT);
+        pk.b[i] = acc + e[i];  // 加噪声 e_i（两者均为 COEFF 格式）
     }
 }
 
@@ -235,20 +266,32 @@ MLWECiphertext MLWEScheme::Encrypt(const MLWEPublicKey& pk,
 
     // --- 步骤 2：c1 = A^T · r ---
     //   c1_i = Σ_{j=0}^{k-1} A_{j,i} * r_j     （A 的第 i 列与 r 内积）
+    // 注意：乘法前需将操作数切换到 EVALUATION 格式（NTT 域）。
     for (usint i = 0; i < k; ++i) {
         RingElement acc = m_ctx->MakeElement();
+        // 关键修复：将 acc 显式切换到 EVALUATION 格式，使 m_format 与数据状态一致。
+        // 否则 operator+= 不更新 m_format，后续 SetFormat 会误判跳过 INTT。
+        acc.SetFormat(Format::EVALUATION);
         for (usint j = 0; j < k; ++j) {
-            acc += pk.A[j][i] * r[j];
+            // ToEval 将 COEFFICIENT 格式的元素切换到 EVALUATION 格式后做 NTT 域乘法
+            acc += MLWEContext::ToEval(pk.A[j][i]) * MLWEContext::ToEval(r[j]);
         }
-        ct.c1[i] = acc;
+        // acc 的数据和 m_format 均为 EVALUATION，格式一致
+        ct.c1[i] = acc;  // c1[i] 保留在 EVALUATION 格式（后续解密时会处理）
     }
 
     // --- 步骤 3：c0 = b^T · r + m ---
     //   c0 = Σ_{j=0}^{k-1} b_j * r_j + m
+    // 注意：乘法在 EVALUATION 域进行，加法 m 前需切回 COEFFICIENT 域。
     RingElement c0 = m_ctx->MakeElement();
+    // 关键修复：将 c0 显式切换到 EVALUATION 格式，使 m_format 与数据状态一致。
+    c0.SetFormat(Format::EVALUATION);
     for (usint j = 0; j < k; ++j) {
-        c0 += pk.b[j] * r[j];
+        // ToEval 将 b_j 和 r_j 切换到 EVALUATION 格式后做 NTT 域乘法
+        c0 += MLWEContext::ToEval(pk.b[j]) * MLWEContext::ToEval(r[j]);
     }
+    // 将 c0 从 EVALUATION 切回 COEFFICIENT（执行 INTT），以便与消息 m（COEFF 格式）相加
+    c0.SetFormat(Format::COEFFICIENT);
     c0 += m;
 
     ct.c0 = c0;
@@ -287,11 +330,18 @@ RingElement MLWEScheme::DecryptCore(
     usint k = m_ctx->GetParams().k;
 
     // 计算 s^T · c1
+    // 注意：sk[i] 在 COEFFICIENT 格式，c1[i] 在 EVALUATION 格式（来自 Encrypt），
+    // 乘法前需将 sk[i] 切换到 EVALUATION 格式。c1[i] 若已在 EVAL 则 ToEval 为无操作。
     RingElement inner = m_ctx->MakeElement();
+    // 关键修复：将 inner 显式切换到 EVALUATION 格式，使 m_format 与数据状态一致。
+    // 否则 operator+= 不更新 m_format，后续 SetFormat(COEFFICIENT) 会误判跳过 INTT。
+    inner.SetFormat(Format::EVALUATION);
     for (usint i = 0; i < k; ++i) {
-        inner += sk[i] * c1[i];
+        inner += MLWEContext::ToEval(sk[i]) * MLWEContext::ToEval(c1[i]);
     }
-    // m' = c0 - s^T · c1
+    // inner 的数据和 m_format 均为 EVALUATION，现在切回 COEFFICIENT（执行 INTT）
+    inner.SetFormat(Format::COEFFICIENT);
+    // m' = c0 - s^T · c1（两者均为 COEFFICIENT 格式）
     return c0 - inner;
 }
 
@@ -304,8 +354,13 @@ RingElement MLWEScheme::InnerProduct(const std::vector<RingElement>& a,
         throw std::invalid_argument("InnerProduct: 向量长度不一致。");
     }
     RingElement acc = m_ctx->MakeElement();
+    // 关键修复：将 acc 显式切换到 EVALUATION 格式，使 m_format 与数据状态一致。
+    // 否则 operator+= 不更新 m_format，返回的元素格式标记与数据不匹配。
+    acc.SetFormat(Format::EVALUATION);
     for (size_t i = 0; i < a.size(); ++i) {
-        acc += a[i] * b[i];
+        // 注意：乘法前将操作数切换到 EVALUATION 格式（NTT 域），
+        // 确保 PolyImpl::operator* 可正常工作。
+        acc += MLWEContext::ToEval(a[i]) * MLWEContext::ToEval(b[i]);
     }
     return acc;
 }
@@ -320,7 +375,7 @@ RingElement MLWEScheme::InnerProduct(const std::vector<RingElement>& a,
 std::vector<int64_t> ElementToVector(const RingElement& e) {
     // 切换到系数表示，逐项取值。
     RingElement eCoeff = e;
-    eCoeff.SetFormat(lbcrypto::COEFFICIENT);
+    eCoeff.SetFormat(Format::COEFFICIENT);
     auto n = eCoeff.GetLength();
     std::vector<int64_t> out(n);
     for (usint i = 0; i < n; ++i) {
@@ -339,7 +394,9 @@ RingElement VectorToElement(const std::vector<int64_t>& coeffs,
                             const MLWEContext& ctx) {
     RingElement e = ctx.MakeElement();
     for (size_t i = 0; i < coeffs.size() && i < ctx.GetParams().n; ++i) {
-        e.SetValueAtIndex(i, coeffs[i]);
+        // 注意：NativePoly 没有 SetValueAtIndex 方法，使用 operator[] 赋值。
+        // 将 int64_t 转为 NativeInteger 类型。
+        e[i] = lbcrypto::NativeInteger(coeffs[i]);
     }
     return e;
 }
@@ -368,7 +425,9 @@ std::string ElementToString(const RingElement& e, bool all) {
     double l2 = 0.0;
     for (auto x : v) {
         int64_t s = toSigned(x);
-        maxAbs = std::max(maxAbs, std::llabs(s));
+        // 注意：std::llabs 返回 long long，而 maxAbs 是 int64_t（即 long），
+        // 类型不匹配会导致 std::max 模板推导失败，需显式转换。
+        maxAbs = std::max<int64_t>(maxAbs, static_cast<int64_t>(std::llabs(s)));
         l2 += (double)s * s;
     }
     l2 = std::sqrt(l2);

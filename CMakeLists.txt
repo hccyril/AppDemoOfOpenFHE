@@ -25,6 +25,7 @@ add_executable(AppDemo
     src/test2.cpp
     src/mlwe.cpp
     src/mlwe_demo.cpp
+    src/bchp_demo.cpp
 )
 
 target_include_directories(AppDemo PRIVATE ${CMAKE_SOURCE_DIR}/include)
@@ -97,6 +98,48 @@ else()
     else()
         message(WARNING "Could not find OpenFHE libraries in ${OPENFHE_PREFIX}/lib")
     endif()
+endif()
+
+# ── BLAS (OpenBLAS / 参考 BLAS) ────────────────────────────────────────
+# bchp_demo.cpp 复现论文《Fast Homomorphic Linear Algebra with BLAS》(arXiv:2503.16080)，
+# 需要链接 BLAS（CBLAS C 接口）。优先用 CMake 自带的 FindBLAS，其次手动搜索 OpenBLAS。
+# 查找顺序：find_package(BLAS) → pkg-config openblas → 手动搜索 cblas.h / libopenblas。
+find_package(BLAS QUIET)
+
+if(NOT BLAS_FOUND)
+    # 回退：尝试通过 pkg-config 或手动搜索 OpenBLAS
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(OPENBLAS QUIET openblas)
+    endif()
+    if(OPENBLAS_FOUND)
+        set(BLAS_LIBRARIES ${OPENBLAS_LIBRARIES})
+        set(BLAS_INCLUDE_DIRS ${OPENBLAS_INCLUDE_DIRS})
+    else()
+        find_library(_OPENBLAS_LIB NAMES openblas blas)
+        find_path(_CBLAS_INCLUDE_DIR NAMES cblas.h PATH_SUFFIXES openblas)
+        if(_OPENBLAS_LIB AND _CBLAS_INCLUDE_DIR)
+            set(BLAS_LIBRARIES ${_OPENBLAS_LIB})
+            set(BLAS_INCLUDE_DIRS ${_CBLAS_INCLUDE_DIR})
+            set(BLAS_FOUND TRUE)
+        endif()
+    endif()
+endif()
+
+if(BLAS_FOUND)
+    message(STATUS "BLAS found: ${BLAS_LIBRARIES}")
+    target_link_libraries(AppDemo PRIVATE ${BLAS_LIBRARIES})
+    if(BLAS_INCLUDE_DIRS)
+        target_include_directories(AppDemo SYSTEM PRIVATE ${BLAS_INCLUDE_DIRS})
+    endif()
+    target_compile_definitions(AppDemo PRIVATE BCHP_HAVE_BLAS=1)
+else()
+    # 找不到 BLAS 时给出明确提示（不直接报错，便于在无 BLAS 环境下先编译其余模块排查）
+    message(WARNING
+        "未找到 BLAS/OpenBLAS。bchp_demo.cpp 需要 CBLAS 才能链接成功。\n"
+        "安装方法：Ubuntu/Debian: sudo apt-get install libopenblas-dev；\n"
+        "          CentOS/RHEL:   sudo yum install openblas-devel；\n"
+        "          macOS:         brew install openblas。")
 endif()
 
 # ── OpenMP ─────────────────────────────────────────────────────────────
