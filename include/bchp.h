@@ -26,13 +26,14 @@
 
 namespace bchp {
 
+// 注意：usint 是 OpenFHE 的全局 typedef（经 pke/openfhe.h 引入全局命名空间），
+// 不在 mlwe 命名空间内，因此不能写 using mlwe::usint。直接使用裸 usint 即可。
 using mlwe::RingElement;
 using mlwe::MLWEContext;
 using mlwe::MLWEScheme;
 using mlwe::MLWEPublicKey;
 using mlwe::MLWESecretKey;
 using mlwe::MLWECiphertext;
-using mlwe::usint;
 
 //==============================================================================
 // 数据结构：矩阵密文（Matrix RLWE Ciphertext）

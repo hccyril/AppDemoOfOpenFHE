@@ -38,6 +38,8 @@ extern "C" {
 #include <cblas.h>
 }
 
+// 注意：usint 是 OpenFHE 的全局 typedef（经 pke/openfhe.h 引入全局命名空间），
+// 不在 mlwe 命名空间内，因此不能写 using mlwe::usint。直接使用裸 usint 即可。
 using mlwe::RingElement;
 using mlwe::MLWEContext;
 using mlwe::MLWEScheme;
@@ -45,12 +47,14 @@ using mlwe::MLWEParams;
 using mlwe::MLWEPublicKey;
 using mlwe::MLWESecretKey;
 using mlwe::MLWECiphertext;
-using mlwe::usint;
 using mlwe::ElementToVector;
 using mlwe::VectorToElement;
 using mlwe::MaxCoeffAbsDiff;
 
-namespace bchp_demo {
+// 注意：此命名空间命名为 bchp_demo_ns 而非 bchp_demo，
+// 因为文件末尾有一个全局函数 int bchp_demo()（供 AppDemo.cpp 调用），
+// 若命名空间与函数同名，编译器会报「redeclared as different kind of entity」错误。
+namespace bchp_demo_ns {
 
 // 计时器
 class Timer {
@@ -75,7 +79,7 @@ static void PrintBar(const std::string& title) {
 // 把环元素前若干系数打印为带符号整数
 static std::string CoeffsToString(const RingElement& e, size_t show = 8) {
     std::vector<int64_t> v = ElementToVector(e);
-    usint n = e.GetLength();
+    // 注意：原代码声明了 usint n = e.GetLength() 但未使用，已删除以消除 -Wunused-variable 警告。
     int64_t q = static_cast<int64_t>(e.GetModulus().ConvertToInt());
     std::ostringstream os;
     os << "[";
@@ -323,13 +327,13 @@ static void DemoD_AutomorphismCMT(const MLWEContext& ctx, const MLWEScheme& sche
               << " → σ_k 保持 RLWE 结构，Algorithm 4 正确\n";
 }
 
-}  // namespace bchp_demo
+}  // namespace bchp_demo_ns
 
 //==============================================================================
 // 入口（供 AppDemo.cpp 调用）
 //==============================================================================
 int bchp_demo() {
-    bchp_demo::PrintBar("BCHP：论文《Fast Homomorphic Linear Algebra with BLAS》真实实现演示");
+    bchp_demo_ns::PrintBar("BCHP：论文《Fast Homomorphic Linear Algebra with BLAS》真实实现演示");
 
     try {
         // 环参数：n=2048，q=40961（满足 q≡1 mod 2n 的素数），k=2，σ=4
@@ -338,10 +342,10 @@ int bchp_demo() {
         auto ctx = std::make_shared<MLWEContext>(params);
         MLWEScheme scheme(ctx);
 
-        bchp_demo::DemoA_MatrixRLWE(*ctx, scheme);
-        bchp_demo::DemoB_CPMM(*ctx, scheme);
-        bchp_demo::DemoC_HomMulRelin(*ctx, scheme);
-        bchp_demo::DemoD_AutomorphismCMT(*ctx, scheme);
+        bchp_demo_ns::DemoA_MatrixRLWE(*ctx, scheme);
+        bchp_demo_ns::DemoB_CPMM(*ctx, scheme);
+        bchp_demo_ns::DemoC_HomMulRelin(*ctx, scheme);
+        bchp_demo_ns::DemoD_AutomorphismCMT(*ctx, scheme);
     } catch (const std::exception& ex) {
         std::cerr << "\n[错误] " << ex.what() << "\n";
         return 1;
