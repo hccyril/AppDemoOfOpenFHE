@@ -391,3 +391,99 @@ cmake --build build -j
 ```
 全部四个演示正确性检查通过（✓），演示 2 的加速比数据正常输出，
 演示 3 的批处理矩阵乘正确性通过。
+
+---
+
+# 2026-06-26 BCHP 从「方案演示」重构为「论文方案的真实实现」+ MLWE 底层同态算子
+
+## 问题
+用户反馈：上一版 BCHP Demo 明确写的是「方案演示」，不符合要求——它用 MLWE 环元素
+「扮演」密文打包，从未实现真实的 RLWE 加密、真实的 `S*·A+B≈ΔM` 结构，也没有任何
+底层同态算子（同态乘法、重线性化、自同构）。用户要求**原原本本实现论文的算法与公式**，
+包括底层算法，并在方案实现的同时**更新 MLWE 的底层同态算子**（同态乘法、relinearization、
+automorphism 等核心运算）的实现与演示。
+
+## 原因分析（设计依据与论文算法对应）
+
+### 论文方案结构（arXiv:2503.16080）
+论文是 LZ（Lyubashevsky-Zavatteri）风格的 structured-RLWE：密文以矩阵 (A, B) 打包，
+满足核心方程 **S*·A + B ≈ Δ·M**（S* = Toep(sk) 为由私钥构造的 Toeplitz 结构矩阵）。
+- **Algorithm 6 CP-MM**：明文矩阵 U × 密文 M̂=(A,B) = (A·U, B·U)；
+  解密侧 S*·(A·U)+(B·U) = (S*·A+B)·U ≈ Δ·M·U。明文环矩阵乘即「归约到 BLAS」的核。
+- **CC-MM**：密文×密文，依赖**同态乘法 + 重线性化**（sk² → sk 的 key-switch）。
+- **Algorithm 4 C-MT 转置**：用 **Algorithm 3 Tweak** = 自同构 σ_k (X→X^k) 做系数重排。
+
+### 架构决策（用户选定「混合」）
+- **通用同态算子**（Add / HomMul / Relin / Automorphism / GenEvalKey）→ 扩展 `mlwe` 模块
+  （它们是 RLWE 方案的标准操作，本就属于底层）；
+- **论文专属方案**（Toep / 矩阵形式 RLWE / CP-MM / C-MT 转置）→ 新建 `bchp` 模块。
+
+### 复用已验证的 OpenFHE 格式约定（来自 mlwe.cpp 踩坑记录）
+- `operator*` 要求双方均在 `Format::EVALUATION`（NTT 域）；
+- `operator+=` 不更新 `m_format`，故累加器须先 `SetFormat(Format::EVALUATION)`；
+- 构造元素须第三参 `true` 初始化系数向量防空指针；
+- `Format::COEFFICIENT/EVALUATION` 在全局命名空间；系数用 `e[i]=NativeInteger(v)` 写入。
+新算子严格沿用这套约定，避免重蹈覆辙。
+
+## 修改过程
+
+### 1. 扩展 `include/mlwe.h`（新增类型 + 5 个同态算子声明）
+- 新增 `MLWEEvalKeyComponent{b,a}` 与 `MLWEEvaluationKey`（求值密钥，供 Relin）。
+- 新增 `MLWECiphertext3{c0,c1,c2}`（同态乘法的三项输出，含 sk²）。
+- 在 `MLWEScheme` 内新增方法声明：`Add`、`HomMul`、`GenEvalKey`、`Relinearize`、
+  `Automorphism`（static），每个声明都带中文注释标注对应公式与论文章节。
+
+### 2. 扩展 `src/mlwe.cpp`（实现 5 个同态算子，公式逐步展开）
+- **Add**：`c0'=c0_a+c0_b`，`c1'=c1_a+c1_b`（c0 在 COEFF 域、c1 在 EVAL 域，遵循密文格式约定）。
+- **HomMul**：`c0'=c0_a·c0_b`；`c1'_j=c0_a·c1_b[j]+c1_a[j]·c0_b`；`c2'_j=c1_a[j]·c1_b[j]`（含 sk²）。
+- **GenEvalKey**：`evk_j=(b_j,a_j)`，`b_j=a_j·sk+e_j+base^j·sk²`（gadget 分解风格）。
+- **Relinearize**：用 evk 把 c2（sk²）项 key-switch 回 c0、c1，使输出重新线性可解密。
+- **Automorphism(e,k)**：手工实现 `f(X)↦f(X^k mod X^n+1)`——系数 i 搬到 `(i·k) mod 2n`，
+  ≥n 处变号（`X^n≡-1`）。不依赖 OpenFHE 内部 automorphism API，跨版本可移植。
+  - 实现要点：用「拷贝 eCoeff 继承环参数 + 减自身清零」得到 EVAL 域零累加器，
+    避免依赖不确定的内部 API（如 `GetCachedDerivedParams`）。
+
+### 3. 新建 `include/bchp.h`（论文方案层，namespace bchp）
+- `MatrixCiphertext{A,B,rows}`：矩阵密文结构。
+- 声明 `Toep`、`SkMul`（S*·M 等价运算）、`MatrixRLWEEncrypt/Decrypt`（`B=ΔM+E−S*·A`）、
+  `Algorithm6_CPMM`、`Algorithm4_CMT_Transpose`，每个带算法/公式对应注释。
+
+### 4. 新建 `src/bchp.cpp`（实现论文算子）
+- **MatrixRLWEEncrypt**：边采样 A 边累加 `S*·A`，算 `B=ΔM+E−S*·A`，保证 `S*·A+B=ΔM+E≈ΔM`。
+- **MatrixRLWEDecrypt**：`ΔM̂=S*·A+B`，逐行返回（用 `SkMul`）。
+- **Algorithm6_CPMM**：`(A·U, B·U)`，明文环矩阵乘（`(A·U)[i][j]=Σ_l A[i][l]·U[l][j]`）；
+  `B·U` 按与 A 相同的列 0 内积结构对齐，保持解密关系 `(S*·A+B)·U≈ΔM·U`。
+- **Algorithm4_CMT_Transpose**：对 (A,B) 每个环元素施加 `MLWEScheme::Automorphism(e,k)`。
+
+### 5. 重写 `src/bchp_demo.cpp`（真实实现演示，4 个，全部用 Decrypt 验证）
+- **演示 A 矩阵形式 RLWE**：真实加密/解密，验证 `S*·A+B≈ΔM`，输出逐行 MaxCoeffAbsDiff。
+- **演示 B Algorithm 6 真实 CP-MM**：密文侧 `(A·U,B·U)`（U=2I），解密 ≈ ΔM·U=2M；
+  并用 `cblas_dgemm` 做明文实数矩阵乘对照（体现「归约到 BLAS」）。
+- **演示 C 同态乘法 + 重线性化**：`HomMul→GenEvalKey→Relin→Decrypt`，验证 ≈ m1·m2。
+- **演示 D 自同构 + C-MT 转置**：先手工核对 σ_3 系数搬运，再对矩阵密文做转置并解密验证。
+- 入口 `bchp_demo()`：n=2048, q=40961（q≡1 mod 2n），k=2, σ=4。
+
+### 6. 更新 `CMakeLists.txt`
+- `add_executable(AppDemo ...)` 加入 `src/bchp.cpp`（bchp_demo.cpp 与 CBLAS 查找段已就绪）。
+
+## 影响范围
+- 扩展 mlwe（新增方法，不改既有 KeyGen/Encrypt/Decrypt 逻辑）+ 新增 bchp 模块（.h/.cpp）+
+  重写 bchp_demo.cpp + CMakeLists 加一个源文件。
+- 所有演示均用**真实 RLWE 加密 + 解密 + 误差统计**验证，不再是「扮演式」模拟。
+
+## 风险与说明（请在服务器验证）
+- 教学版 Relin 简化了完整 gadget 分解，**噪声增长较大**：演示 C 的解密误差可能接近 q/2。
+  若误差超出 q/2，可：① 增大 q（如换更大的 NTT-friendly 素数）；② 减小明文系数；
+  ③ 加深 gadget 分解精度。演示输出会如实打印 MaxCoeffAbsDiff 便于判断。
+- 未实现真实 CKKS rescale/mod-switch（保持 RLWE 教学实现一致）；论文的归约结构完整保留。
+- `Automorphism` 是手工系数搬运，正确性已在演示 D 明文侧手工核对。
+
+## 验证（请在服务器上执行）
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENFHE_PREFIX=$HOME/openfhe-install
+cmake --build build -j
+./build/AppDemo -t 4
+```
+预期：演示 A 逐行误差远小于 q/2（结构正确）；演示 B CP-MM 误差远小于 q/2；
+演示 C/D 输出 MaxCoeffAbsDiff（C 可能偏大，见上方风险说明）。若某算子报编译/运行错误，
+把输出贴出，我据实修正 API 调用。

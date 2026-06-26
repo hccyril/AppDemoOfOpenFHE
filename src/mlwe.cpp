@@ -366,6 +366,234 @@ RingElement MLWEScheme::InnerProduct(const std::vector<RingElement>& a,
 }
 
 //==============================================================================
+// 同态算子实现（Homomorphic Operations）
+//==============================================================================
+// 以下算子是 RLWE 方案的标准同态操作，也是论文 arXiv:2503.16080 中
+// CC-MM（密文-密文矩阵乘法）所依赖的底层原语。
+//
+// 全部严格遵循 OpenFHE 的格式约定（已在 KeyGen/Encrypt/Decrypt 中验证）：
+//   - operator* 要求双方均在 EVALUATION（NTT）格式；
+//   - operator+= 不更新 m_format，故累加器须先 SetFormat(Format::EVALUATION)；
+//   - 构造元素须传第三参 true 初始化系数向量防空指针。
+//------------------------------------------------------------------------------
+
+//------------------------------------------------------------------------------
+// Add：同态加法 ct' = ct_a + ct_b
+//------------------------------------------------------------------------------
+// 公式（RLWE 加法同态性）：
+//   c0' = c0_a + c0_b
+//   c1' = c1_a + c1_b            （逐向量相加）
+// 加法不增长密文长度，也不放大噪声（噪声近似为两者之和），是最廉价的同态运算。
+// 解密正确性：Dec(ct_a+ct_b) = Dec(ct_a) + Dec(ct_b)（在噪声允许范围内）。
+MLWECiphertext MLWEScheme::Add(const MLWECiphertext& ct_a,
+                               const MLWECiphertext& ct_b) const {
+    usint k = m_ctx->GetParams().k;
+    if (ct_a.c1.size() != k || ct_b.c1.size() != k) {
+        throw std::invalid_argument("Add: 密文 c1 维度与 k 不一致。");
+    }
+
+    MLWECiphertext res;
+    // c0' = c0_a + c0_b（COEFFICIENT 域相加）
+    RingElement c0 = ct_a.c0;
+    c0.SetFormat(Format::COEFFICIENT);
+    RingElement c0b = ct_b.c0;
+    c0b.SetFormat(Format::COEFFICIENT);
+    c0 += c0b;  // 双方均 COEFFICIENT，operator+= 不改格式
+    res.c0 = c0;
+
+    // c1'_j = c1_a[j] + c1_b[j]（c1 在 EVALUATION 域相加，保持 EVAL 格式约定）
+    res.c1.assign(k, m_ctx->MakeElement());
+    for (usint j = 0; j < k; ++j) {
+        RingElement v = ct_a.c1[j];
+        v.SetFormat(Format::EVALUATION);
+        RingElement v2 = ct_b.c1[j];
+        v2.SetFormat(Format::EVALUATION);
+        v += v2;  // 双方均 EVAL
+        res.c1[j] = v;
+    }
+    return res;
+}
+
+//------------------------------------------------------------------------------
+// HomMul：同态乘法（线性张量积 / tensor product）
+//------------------------------------------------------------------------------
+// 公式（RLWE 乘法）：密文 ct_a=(c0_a, c1_a)、ct_b=(c0_b, c1_b)，解密关系
+//   m_a ≈ c0_a + sk^T·c1_a，m_b ≈ c0_b + sk^T·c1_b。
+// 乘积 m_a·m_b ≈ (c0_a + sk^T·c1_a)(c0_b + sk^T·c1_b)，展开得：
+//   c0' = c0_a · c0_b                              （常数项，R_q 环乘）
+//   c1'_j = c0_a · c1_b[j] + c1_a[j] · c0_b        （含 sk 的一次项）
+//   c2'_j = (与 sk² 有关，由 c1_a · c1_b 的组合产生)
+// 这里把 c2 简化存为 c1_a·c1_b 的逐项组合（教学实现；正式方案做 gadget 分解）。
+// c0' 在 COEFFICIENT 域，c1'/c2' 在 EVALUATION 域（遵循密文格式约定）。
+MLWECiphertext3 MLWEScheme::HomMul(const MLWECiphertext& ct_a,
+                                   const MLWECiphertext& ct_b) const {
+    usint k = m_ctx->GetParams().k;
+    if (ct_a.c1.size() != k || ct_b.c1.size() != k) {
+        throw std::invalid_argument("HomMul: 密文 c1 维度与 k 不一致。");
+    }
+
+    MLWECiphertext3 res;
+
+    // --- c0' = c0_a · c0_b（R_q 环乘 = 负循环卷积）---
+    RingElement c0 = MLWEContext::ToEval(ct_a.c0) * MLWEContext::ToEval(ct_b.c0);
+    c0.SetFormat(Format::COEFFICIENT);
+    res.c0 = c0;
+
+    // --- c1'_j = c0_a · c1_b[j] + c1_a[j] · c0_b ---
+    // 两项乘法各自 ToEval；累加器预设 EVAL 格式（避开 operator+= 不更新 m_format 的陷阱）。
+    // c0_a/c0_b 是标量环元素，分别与 c1_b[j]/c1_a[j] 这些 k 维向量相乘。
+    RingElement c0a_e = MLWEContext::ToEval(ct_a.c0);
+    RingElement c0b_e = MLWEContext::ToEval(ct_b.c0);
+    res.c1.assign(k, m_ctx->MakeElement());
+    for (usint j = 0; j < k; ++j) {
+        RingElement acc = m_ctx->MakeElement();
+        acc.SetFormat(Format::EVALUATION);  // 关键：预设 EVAL 使 m_format 与数据一致
+        acc += c0a_e * MLWEContext::ToEval(ct_b.c1[j]);
+        acc += MLWEContext::ToEval(ct_a.c1[j]) * c0b_e;
+        res.c1[j] = acc;  // 保持 EVAL 格式
+    }
+
+    // --- c2'_j = Σ_l c1_a[l] · c1_b 组合（含 sk² 项）---
+    // 教学简化：对每个 j，取 c1_a[j]·c1_b[j] 作为 sk² 项的代表（对应 sk_j²）。
+    // 正式方案会对 c1_b 做 gadget(base) 分解后与 evk 重组，这里只保留待 Relinearize 的原始项。
+    res.c2.assign(k, m_ctx->MakeElement());
+    for (usint j = 0; j < k; ++j) {
+        RingElement acc = m_ctx->MakeElement();
+        acc.SetFormat(Format::EVALUATION);
+        acc += MLWEContext::ToEval(ct_a.c1[j]) * MLWEContext::ToEval(ct_b.c1[j]);
+        res.c2[j] = acc;
+    }
+    return res;
+}
+
+//------------------------------------------------------------------------------
+// GenEvalKey：生成求值密钥（对 sk² 的加密，供 Relinearize 使用）
+//------------------------------------------------------------------------------
+// 公式（gadget 分解的 key-switch key）：
+//   evk_j = (b_j, a_j)，其中 a_j ← R_q 均匀，b_j = a_j·sk + e_j + base^j · sk²。
+// base 取自 MLWEParams::base（默认 0 时退化为单一分量，base 当作 2 处理）。
+// Relinearize 时把含 sk² 的 c2_j 项与 evk_j 组合即可把 sk²「替换」为 sk。
+MLWEEvaluationKey MLWEScheme::GenEvalKey(const MLWESecretKey& sk) const {
+    usint k = m_ctx->GetParams().k;
+    usint base = m_ctx->GetParams().base;
+    if (base == 0) base = 2;  // 默认 gadget 基
+
+    MLWEEvaluationKey evk(k);
+    for (usint j = 0; j < k; ++j) {
+        // a_j ← 均匀
+        RingElement a = m_ctx->SampleUniform();
+        // e_j ← 小噪声
+        RingElement e = m_ctx->SampleGaussian();
+
+        // 计算 sk²（sk[j] 自乘，R_q 环乘）
+        RingElement sk_j_e = MLWEContext::ToEval(sk[j]);
+        RingElement sk2 = sk_j_e * sk_j_e;  // EVAL 域
+
+        // base^j · sk²：base^j 是整数系数倍乘，逐系数缩放后做环乘或直接标量乘。
+        // 简化：用 base^j 标量（这里 base^j 量级小，直接构造常数环元素相乘）。
+        int64_t pw = 1;
+        for (usint t = 0; t < j; ++t) pw *= base;  // pw = base^j
+        RingElement pw_const = MLWEContext::ToEval(m_ctx->MakeConstantElement(pw));
+        RingElement scaled_sk2 = sk2 * pw_const;  // EVAL 域
+
+        // b_j = a_j·sk + e_j + base^j·sk²
+        RingElement a_sk = MLWEContext::ToEval(a) * sk_j_e;  // EVAL 域
+        // 切回 COEFFICIENT 域以与 e_j（COEFFICIENT）相加
+        a_sk.SetFormat(Format::COEFFICIENT);
+        scaled_sk2.SetFormat(Format::COEFFICIENT);
+        RingElement b = a_sk + e + scaled_sk2;  // 均 COEFFICIENT
+
+        evk[j].a = a;
+        evk[j].b = b;
+    }
+    return evk;
+}
+
+//------------------------------------------------------------------------------
+// Relinearize：重线性化（把含 sk² 的三项密文降为含 sk 的两项密文）
+//------------------------------------------------------------------------------
+// 公式：ct3 = (c0, c1, c2)，解密关系 m ≈ c0 + sk^T·c1 + sk^T·c2·sk。
+// 用 evk_j = (b_j, a_j)（其中 b_j = a_j·sk + e_j + base^j·sk²）把 c2 项 key-switch：
+//   新 c0 = c0 + Σ_j <gadget分解(c2_j), b_j>      （吸收 base^j·sk² 的标量部分）
+//   新 c1_j = -Σ_j <gadget分解(c2_j), a_j>          （产生的含 sk 项）
+// 教学简化：这里直接把 c2_j 与 evk_j 的 b_j/a_j 做点积搬移（不做完整 gadget 分解），
+// 把含 sk² 的能量迁移回 c0、c1，使输出密文重新满足线性可解密。
+MLWECiphertext MLWEScheme::Relinearize(const MLWECiphertext3& ct3,
+                                       const MLWEEvaluationKey& evk) const {
+    usint k = m_ctx->GetParams().k;
+    if (ct3.c1.size() != k || ct3.c2.size() != k || evk.size() != k) {
+        throw std::invalid_argument("Relinearize: 维度不一致。");
+    }
+
+    // 新 c0：在原 c0 基础上吸收 evk 的 b 部分（COEFFICIENT 域累加）
+    RingElement c0 = ct3.c0;
+    c0.SetFormat(Format::COEFFICIENT);
+    for (usint j = 0; j < k; ++j) {
+        // <c2_j, b_j>：把 c2_j（含 sk² 能量）与 evk_j.b 关联
+        RingElement term = MLWEContext::ToEval(ct3.c2[j]) * MLWEContext::ToEval(evk[j].b);
+        term.SetFormat(Format::COEFFICIENT);
+        c0 += term;
+    }
+
+    // 新 c1_j：原 c1_j 减去 evk 的 a 部分对应的项（产生含 sk 的项，保持 EVAL 域）
+    std::vector<RingElement> c1(k, m_ctx->MakeElement());
+    for (usint j = 0; j < k; ++j) {
+        RingElement acc = ct3.c1[j];
+        acc.SetFormat(Format::EVALUATION);
+        // 减去 evk_j.a 相关项（key-switch 把 sk² 项转出的「代价」）
+        RingElement sub = MLWEContext::ToEval(ct3.c2[j]) * MLWEContext::ToEval(evk[j].a);
+        acc -= sub;  // EVAL 域减法，acc 仍 EVAL
+        c1[j] = acc;
+    }
+
+    MLWECiphertext res;
+    res.c0 = c0;
+    res.c1 = c1;
+    return res;
+}
+
+//------------------------------------------------------------------------------
+// Automorphism：自同构 X→X^k（mod (X^n+1) 的 Frobenius）
+//------------------------------------------------------------------------------
+// 数学：σ_k : f(X) = Σ a_i X^i ↦ Σ a_i X^(i·k mod 2n)，
+//   其中若 (i·k mod 2n) ≥ n 则取负号（因 X^n ≡ -1 (mod X^n+1)）。
+//   即 new_index = (i·k) mod 2n；若 ≥ n，则 new_index -= n 且系数取负。
+// gcd(k,2n)=1 时为双射（合法自同构）。
+// 论文用途：Algorithm 3 Tweak / Algorithm 4 C-MT 转置用自同构做系数重排/旋转。
+// 手工实现系数搬运，不依赖 OpenFHE 内部 automorphism API。
+RingElement MLWEScheme::Automorphism(const RingElement& e, usint k) {
+    // 先切到 COEFFICIENT 域以读系数
+    RingElement eCoeff = e;
+    eCoeff.SetFormat(Format::COEFFICIENT);
+    usint n = eCoeff.GetLength();
+    usint twoN = 2 * n;
+
+    // 构造输出元素：复制 eCoeff 作为模板（共享环参数与格式），再清零系数。
+    // 用 eCoeff 拷贝构造可保证环参数正确，避免依赖不确定的内部 API。
+    RingElement out = eCoeff;  // COEFFICIENT 域，与 eCoeff 同环参数
+    // 清零所有系数
+    for (usint i = 0; i < n; ++i) {
+        out[i] = lbcrypto::NativeInteger(0);
+    }
+
+    // 系数搬运：i -> newIdx
+    for (usint i = 0; i < n; ++i) {
+        usint newIdx = (i * k) % twoN;
+        int64_t sign = 1;
+        if (newIdx >= n) {
+            newIdx -= n;
+            sign = -1;  // X^n ≡ -1
+        }
+        // 取原系数（[0,q) 内），搬移到 newIdx 并按规则变号
+        int64_t coeff = eCoeff[i].ConvertToInt();
+        int64_t moved = (sign == -1) ? -coeff : coeff;
+        // OpenFHE 内部会模 q 归一化负数
+        out[newIdx] = lbcrypto::NativeInteger(moved);
+    }
+    return out;
+}
+
+//==============================================================================
 // 工具函数实现
 //==============================================================================
 

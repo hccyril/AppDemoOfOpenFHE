@@ -25,6 +25,7 @@ add_executable(AppDemo
     src/test2.cpp
     src/mlwe.cpp
     src/mlwe_demo.cpp
+    src/bchp.cpp
     src/bchp_demo.cpp
 )
 

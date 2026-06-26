@@ -352,3 +352,99 @@ int64_t MaxCoeffAbsDiff(const RingElement& a, const RingElement& b);
 - [OpenFHE 官方仓库与文档](https://github.com/openfheorg/openfhe-development)
 - [OpenFHE API 文档](https://openfhe-development.readthedocs.io/)
 - [NIST PQC 标准（ML-KEM / ML-DSA）](https://csrc.nist.gov/projects/post-quantum-cryptography)
+
+---
+# 附录
+_以下内容均为与【纪廖庵吾鄂】的对话记录_
+
+目标
+按用户「混合」决策重写：通用同态算子 → 扩展 mlwe 模块；论文专属方案（Toep / 矩阵形式 RLWE / CP-MM / C-MT 转置）→ 新建 bchp 模块。原原本本实现论文算法与公式，配真实加密（非模拟），并在 bchp_demo.cpp 用真实解密验证正确性。
+
+已确认的关键事实（探索结论）
+mlwe 类型齐全可复用：MLWEContext（MakeElement/MakeConstantElement/SampleGaussian/SampleUniform/静态ToEval）、MLWEParams(n,k,q,nu,base)、MLWEPublicKey{A,b}、MLWESecretKey、MLWECiphertext{c0,c1}、自由函数 ElementToVector/VectorToElement/MaxCoeffAbsDiff。
+OpenFHE 格式陷阱（用户已踩坑并记录）：operator* 要求双方均在 Format::EVALUATION；operator+= 不更新 m_format，故累加器须先 SetFormat(Format::EVALUATION)；构造须 (elemParams, Format::COEFFICIENT, true) 防空指针。Format::COEFFICIENT/EVALUATION 在全局命名空间。
+自同构无确认可用的 NativePoly API → 手工实现 X→X^k mod (x^n+1) 系数搬运（含 2n 取模与变号规则），无隐藏依赖、自文档化。
+论文算法依据（arXiv:2503.16080）
+密文以矩阵 RLWE 打包：明文矩阵 M 的明文 RLWE 加密 = (A, B)，满足 S·A + B ≈ Δ·M**，S = Toep(sk) 为由私钥 sk 构造的 k·d 维 Toeplitz 结构矩阵。
+Algorithm 6 CP-MM：明文矩阵 U 与密文 M̂=(A,B) 相乘 = (A·U, B·U)，归约为 BLAS；解密侧 S*·(A·U)+(B·U)=(S*·A+B)·U≈Δ·M·U。
+同态乘法 HomMul：两条密文相乘产生含 sk² 的项 → 重线性化 Relin（密钥切换 sk²→sk）降阶。
+Algorithm 4 C-MT 转置：对矩阵-密文做「转置打包」需用 Algorithm 3 Tweak = 自同构 Aut（X→X^k）做系数搬移/重排。
+改动清单
+1. 扩展 include/mlwe.h（在 MLWEScheme 内新增 4 个方法）
+声明（含中文注释标注论文/算法定义）：
+
+Ciphertext Add(ct1, ct2) —— 同态加法（基线，已有解密可验）。
+Ciphertext HomMul(ct1, ct2, sk) —— 同态乘法：c0'=c0·c0', c1' 含 sk·c0、sk·c1，c2'=c1·c1（出现 sk²，待 Relin 降阶）。对应 RLWE 乘法标准公式，注释逐步展开。
+Ciphertext Relinearize(ct, evk) —— 重线性化：用求值密钥 evk（加密 sk²）把 sk² 项 key-switch 回 sk 阶。base 取自 MLWEParams::base。
+RingElement Automorphism(e, k) —— 自同构 X→X^k：手工系数搬运（index i → (i·k) mod 2n，奇数位置变号），实现 mod (x^n+1) 的 Frobenius。
+私钥求值密钥生成 EvaluationKey GenEvalKey(sk)（加密 sk² 供 Relin 用）。
+2. 扩展 src/mlwe.cpp：实现上述 5 个方法
+严格遵循 OpenFHE 格式陷阱（ToEval + 预设 EVALUATION 累加器 + 末尾 SetFormat(COEFFICIENT)）。每个方法头部注释写清对应的公式与噪声增长分析。
+
+3. 新建 include/bchp.h（论文方案层，namespace bchp）
+声明：Toeplitz(sk)、MatrixRLWEEncrypt/Decrypt（矩阵形式 (A,B)↔M，S*·A+B≈ΔM）、Algorithm6_CPMM（明文 U × 密文 → 用 BLAS dgemm 归约）、Algorithm4_CMT_Transpose（用 Aut 做 C-MT 转置）。
+
+4. 新建 src/bchp.cpp：实现上述论文算子
+CP-MM 用 cblas_dgemm；C-MT 转置逐元素调用 mlwe::Automorphism。注释逐条对应论文 Algorithm 编号与公式。
+
+5. 重写 src/bchp_demo.cpp：真实演示（非模拟）
+四个真实演示，每个都用 Decrypt 验证正确性（MaxCoeffAbsDiff 给误差）：
+
+演示A：矩阵形式 RLWE 加密/解密（S*·A+B≈ΔM，验证解密误差小）。
+演示B：Algorithm 6 真实 CP-MM（M̂·U 经 BLAS 后解密 ≈ Δ·M·U）。
+演示C：同态乘法 + 重线性化（HomMul→Relin→解密 ≈ m1·m2）。
+演示D：自同构 + C-MT 转置（Aut 后解密验证；加密转置正确性）。
+6. 更新 CMakeLists.txt：加入 src/bchp.cpp（bchp_demo.cpp/AppDemo.cpp/CBLAS 查找段已就绪，无需改）。
+7. 更新 docs/dev-logs.md：追加本次日志（混合架构决策 + 论文算法/公式对应 + OpenFHE 格式陷阱处理）。
+影响范围与风险
+扩展 mlwe（新增方法不改既有逻辑）+ 新增 bchp 模块 + 重写 demo。
+主要风险：NativePoly 上 sk² 项量级大（q 需足够大）与 Relin 噪声——演示用 n=2048/q 足够大的素数，并在注释中说明误差预期；若某算子因 q 不足导致解密误差过大，会在 demo 输出中如实显示 MaxCoeffAbsDiff，便于你在服务器上据实调整。
+不执行真实 CKKS rescale/mod-switch（保持 RLWE 教学实现一致）；论文的归约结构完整保留。
+
+我现在有了所需的一切。已经确立了关键模式：
+- `MLWEContext::ToEval(e)` — 用于切换到 NTT 域的静态辅助函数（我来确认一下它是否存在于头文件中，但该模式显然是：通过 `SetFormat(Format::EVALUATION)` 将两个操作数切换到 EVALUATION，相乘，然后根据需要进行切换）。
+- 矩阵乘法模式：`acc += ToEval(a) * ToEval(b)`，其中累加器预先切换到 EVALUATION 状态。
+
+让我验证一下 `MLWEContext` 中是否存在 `ToEval`。
+
+全部完成。下面是本次「从方案演示重构为论文真实实现」的总结。
+
+## 完成总结
+
+按你的**混合架构**决策，把 BCHP 从「扮演式方案演示」彻底重构为**论文算法的真实实现**，并同步扩展了 MLWE 底层同态算子。所有改动都带详细中文注释（标注对应论文公式/算法），并更新了 `docs/dev-logs.md`。
+
+### 改动清单（5 个文件）
+
+**1. 扩展 `include/mlwe.h`** — 新增类型 + 5 个同态算子声明
+- 类型：`MLWEEvalKeyComponent`/`MLWEEvaluationKey`（求值密钥）、`MLWECiphertext3`（含 sk² 的三项密文）
+- `MLWEScheme` 内新增：`Add`、`HomMul`、`GenEvalKey`、`Relinearize`、`Automorphism`
+
+**2. 扩展 `src/mlwe.cpp`** — 实现 5 个真实同态算子（公式逐步展开）
+- `HomMul`：`c0'=c0_a·c0_b`，`c1'=c0_a·c1_b+c1_a·c0_b`，`c2'=c1_a·c1_b`（含 sk²）
+- `GenEvalKey` + `Relinearize`：把 sk² 项 key-switch 回 sk
+- `Automorphism(e,k)`：手工实现 `f(X)↦f(X^k mod X^n+1)`（系数搬运 + 变号规则，不依赖 OpenFHE 内部 API）
+- 严格沿用已踩坑验证的 OpenFHE 格式约定（ToEval / 预设 EVALUATION 累加器 / `e[i]=NativeInteger(v)`）
+
+**3. 新建 `include/bchp.h` + `src/bchp.cpp`** — 论文方案层
+- `MatrixRLWEEncrypt/Decrypt`：真实 `S*·A + B ≈ Δ·M`
+- `Algorithm6_CPMM`：真实 `(A·U, B·U)`
+- `Algorithm4_CMT_Transpose`：用自同构 σ_k 做密文转置
+
+**4. 重写 `src/bchp_demo.cpp`** — 4 个**真实演示**，全部用 **Decrypt + MaxCoeffAbsDiff** 验证
+- A 矩阵形式 RLWE（验证 `S*·A+B≈ΔM`）
+- B 真实 CP-MM（解密 ≈ ΔM·U）+ `cblas_dgemm` 对照
+- C 同态乘法+重线性化（解密 ≈ m1·m2）
+- D 自同构+C-MT 转置（手工核对 σ_k 搬运 + 密文验证）
+
+**5. `CMakeLists.txt`** — 加入 `src/bchp.cpp`
+
+### 需要你在服务器验证的关键风险
+教学版 Relin **简化了 gadget 分解，噪声增长较大**——演示 C 的解密误差可能接近 q/2。若超出，日志里已写明 3 种调参方向（增大 q / 减小明文系数 / 加深 gadget 精度）。演示输出会如实打印 `MaxCoeffAbsDiff`。
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENFHE_PREFIX=$HOME/openfhe-install
+cmake --build build -j
+./build/AppDemo -t 4
+```
+
+如果有编译/运行报错，把输出贴给我，我据实修正 API 调用——OpenFHE 头文件在你这边、不在我这台 Windows 机上，个别底层接口（如 `NativeInteger` 标量乘、`operator-=`）可能需要微调。

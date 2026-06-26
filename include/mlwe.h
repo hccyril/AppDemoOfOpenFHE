@@ -107,6 +107,40 @@ struct MLWECiphertext {
 };
 
 //------------------------------------------------------------------------------
+// 求值密钥（Evaluation Key）：用于「重线性化（Relinearization）」
+//------------------------------------------------------------------------------
+// 同态乘法 HomMul 之后密文会从 (c0, c1) 两项变为 (c0, c1, c2) 三项，
+// 其中 c2 含有 sk²（私钥平方）这一项，无法直接用线性解密 c0 - s^T·c1 完成。
+// 重线性化的目的是把含 sk² 的项「key-switch」回含 sk 的项，使密文重新可解密。
+//
+// 求值密钥即「对 sk² 的加密」（或其分量化的 gadget 分解版本）：
+//   evk_i = (a_i, b_i = a_i·sk + e_i + base^i · sk²)
+// 这样 Relinearize 时把 c2 按 base 进制分解、取出对应 evk_i 即可把 sk² 项
+// 转换为 sk 项。对应 RLWE/CKKS 方案的标准 key-switching。
+//
+// 这里 evk 为 k 个（与 c1 同维度）分量，每个分量是一对环元素 (b, a)。
+struct MLWEEvalKeyComponent {
+    RingElement b;  // b = a·sk + e + base^i · sk²
+    RingElement a;  // 掩码项
+};
+using MLWEEvaluationKey = std::vector<MLWEEvalKeyComponent>;
+
+//------------------------------------------------------------------------------
+// 三项密文（含 sk² 项）：同态乘法的原始输出
+//------------------------------------------------------------------------------
+// 同态乘法 HomMul 的直接结果含 sk² 项：
+//   c0' = c0_a · c0_b                          （常数项）
+//   c1' = c0_a · c1_b + c1_a · c0_b            （含 sk 的线性项，k 维）
+//   c2' = c1_a · c1_b                           （含 sk² 的二次项，k×k 维→展平为向量）
+// 解密关系变为 m_a·m_b ≈ c0' + sk^T·c1' + sk^T·c2'·sk（含 sk²，无法线性解密），
+// 故须 Relinearize 把 c2' 项「降阶」回 c1'。
+struct MLWECiphertext3 {
+    RingElement c0;                  // 常数项
+    std::vector<RingElement> c1;     // 含 sk 的线性项（k 维）
+    std::vector<RingElement> c2;     // 含 sk² 的二次项（k 维，按 gadget 分解后重排）
+};
+
+//------------------------------------------------------------------------------
 // 类：MLWE 上下文（封装参数、环参数、分布采样器）
 //------------------------------------------------------------------------------
 // 该类持有：
@@ -247,6 +281,49 @@ public:
     //   n · σ^2），远小于 q/2，因此 m' 与 m 在 R_q 中逐系数接近。
     RingElement Decrypt(const MLWECiphertext& ct,
                         const MLWESecretKey& sk) const;
+
+    //--------------------------------------------------------------
+    // 同态算子（Homomorphic Operations）
+    //--------------------------------------------------------------
+    // 以下算子是 RLWE 方案的标准操作，也是论文《Fast Homomorphic Linear Algebra
+    // with BLAS》(arXiv:2503.16080) 中 CC-MM（密文-密文矩阵乘法）所依赖的底层原语。
+
+    // 同态加法：ct' = ct_a + ct_b（逐项相加）。
+    //   c0' = c0_a + c0_b，c1' = c1_a + c1_b。
+    // 加法不增长密文长度与噪声阶，是最「便宜」的同态运算。
+    // 对应 RLWE 加法同态性。
+    MLWECiphertext Add(const MLWECiphertext& ct_a,
+                       const MLWECiphertext& ct_b) const;
+
+    // 同态乘法（Tensor / 线性张量积）：ct' = ct_a ⊗ ct_b。
+    //   c0' = c0_a · c0_b                       （R_q 环乘，负循环卷积）
+    //   c1'_j = c0_a · c1_b[j] + c1_a[j] · c0_b （含 sk 的线性项）
+    //   c2'_j = Σ_{l} c1_a[l] · c1_b[?]          （含 sk² 的二次项）
+    // 乘法后密文含 sk²，无法线性解密，需 Relinearize。
+    // 对应论文 CC-MM 与所有「密文×密文」运算的核心。
+    // 输出三项密文 MLWECiphertext3。
+    MLWECiphertext3 HomMul(const MLWECiphertext& ct_a,
+                           const MLWECiphertext& ct_b) const;
+
+    // 生成求值密钥：对 sk² 的 gadget 分解加密，供 Relinearize 使用。
+    //   evk_i = (b_i, a_i)，其中 b_i = a_i·sk + e_i + base^i · sk²。
+    // base 取自 MLWEParams::base（gadget 基）。evk 为 k 个分量（与 c1 维度一致）。
+    MLWEEvaluationKey GenEvalKey(const MLWESecretKey& sk) const;
+
+    // 重线性化：把三项密文 ct3（含 sk²）降阶为两项密文 ct'（仅含 sk）。
+    //   用 evk 把 c2 项 key-switch 回 c1 项：c1'_new = c1 + Σ_i (gadget 分解后的 c2 与 evk 重组)。
+    // 对应论文 / 标准 RLWE 方案中的 relinearization 步骤。
+    // 输入三项密文与求值密钥，输出两项密文。
+    MLWECiphertext Relinearize(const MLWECiphertext3& ct3,
+                               const MLWEEvaluationKey& evk) const;
+
+    // 自同构（Frobenius / X→X^k 变换）：σ_k : f(X) ↦ f(X^k mod (X^n+1))。
+    // 数学：在 R_q = Z_q[X]/(X^n+1) 中，把每个系数 a_i 的单项式 X^i 映射到 X^(i·k mod 2n)，
+    //   若 (i·k mod 2n) ≥ n 则变号（因为 X^n ≡ -1）。这是 mod (X^n+1) 的合法自同构
+    //   （当 gcd(k, 2n)=1 时为双射）。
+    // 论文用途：Algorithm 3 Tweak / Algorithm 4 C-MT 转置用自同构做密文系数的重排/旋转。
+    // 这里手工实现系数搬运（不依赖 OpenFHE 内部 automorphism API，跨版本可移植）。
+    static RingElement Automorphism(const RingElement& e, usint k);
 
     //--------------------------------------------------------------
     // 工具：环元素算术封装
