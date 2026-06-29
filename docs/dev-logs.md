@@ -591,3 +591,133 @@ cmake --build build -j
 
 注意：演示 B/C/D 的误差接近 q/2（~20470/20480），这是教学版简化 Relin 的预期行为
 （见上文「风险与说明」）。若需更大余量，可增大 q 或减小明文系数。
+
+---
+
+# 2026-06-30 修复 BCHP 演示运行时间异常（14ms → 论文 §6.3 的秒级）
+
+## 问题
+用户反馈：BCHP Demo（`./build/AppDemo -t 4`）在服务器上整程序运行时间仅 **14ms**，
+远不符合预期。论文《Fast Homomorphic Linear Algebra with BLAS》(arXiv:2503.16080)
+§6.3 报告 CC-MM 的运行时间为 **5 秒以上**（256×256≈18s，1024×1024≈278s）。
+要求对照论文检查代码实现并做必要修改，完成后添加详细中文代码注释，
+并把问题分析与解决过程记录到本文件。本机无执行环境，修改后由用户在服务器编译验证。
+
+## 原因分析
+经核查论文 §6.1/6.2/6.3 与现有 BCHP 代码，14ms 的根因是 **4 个复合问题**：
+
+### 问题 1：参数比论文低 3 个数量级
+- 论文 §6.1 实验设置：**N = 2^14 = 16384**，**q ≈ 2^60**。
+- 原实现：`bchp_demo()` 入口取 **n=2048**，**q=40961**（≈2^16）。
+- N 小 8 倍（NTT 长度更短），q 小约 **2^44 倍**——但更关键的是 q 太小导致
+  BLAS 归约根本无需「数字分解」即可放进 double 精度，掩盖了论文核心难点。
+
+### 问题 2：工作负载极小
+- 原演示用 **m=3 行、k=2** 的矩阵密文：CP-MM 的 A·U 仅 **12 次环乘**。
+- 论文 §6.2/6.3 的 CP-MM/CC-MM 工作量在 **256/512/1024** 规模，N² ≈ 2.7×10⁸ 次。
+- 12 次环乘在 14ms 内完成，理所当然偏离论文量级。
+
+### 问题 3：违背论文「归约到 BLAS」核心思想（最关键）
+- 论文 §1.1/§5 的核心贡献：把同态矩阵乘的「明文核」**归约**为高度优化的
+  OpenBLAS 浮点 dgemm——这正是论文标题里的 "with BLAS"。
+- 原实现却用 **OpenFHE 的 NTT 环乘** (`MLWEContext::ToEval(...) * ToEval(...)`)
+  做矩阵乘（`bchp.cpp` 的 `Algorithm6_CPMM`）。这恰好是论文想要**绕过**的方法：
+  逐系数环乘既慢又难以向量化，且 q 小时根本体现不出「归约到 BLAS」的精度难点。
+- 原 `bchp_demo.cpp` 里的 `cblas_dgemm` 调用只是 4×4 玩具矩阵的演示，
+  并未参与真实算法的计算路径。
+
+### 问题 4：缺少 CC-MM 演示
+- 论文 §6.3 的实测对象是 **CC-MM（密文×密文矩阵乘）**，核心为 4 个明文核
+  矩阵乘（A1·A2, A1·B2, B1·A2, B1·B2）。
+- 原演示 C 只是单次 `HomMul + Relin`，演示 B 是小规模 CP-MM，**没有任何 CC-MM**，
+  因此无法对应 §6.3 的秒级耗时。
+
+### 关键技术约束（已核实 OpenFHE 源码）
+- `usint` 是 `uint32_t`（最大 ~4.3×10⁹），**装不下** q≈2^60 → `MLWEParams.q` 字段需扩展。
+- `NativeInteger` 在 NATIVEINT=64 下 `MAX_MODULUS_SIZE=60`，**原生支持** q≈2^60 ✓
+  （`openfhe/src/core/include/math/hal/basicint.h`）。
+- `FirstPrime(nBits, m)` 可生成满足 q≡1 mod m 的 ~nBits 位素数（`nbtheory.h`）。
+- `double` 精确整数范围为 [−2^53, 2^53]；取 base=2^15，n≤2^16 时 n·base²=2^46<2^53 ✓。
+
+## 修改过程
+
+### 1. 扩展 `mlwe.h` / `mlwe.cpp`：支持大模数 q
+- `MLWEParams` 新增字段 `uint64_t q64`、`bool useAutoPrime`、`usint qBits`，
+  并新增构造函数 `MLWEParams(n, k, q64, autoPrime, nu, base=0)`。
+- `MLWEContext` 新增私有成员 `uint64_t m_qUsed`（实际使用的模数）与
+  公有访问器 `GetModulusU64()`；构造时按优先级决定 m_qUsed：
+  useAutoPrime=true → `FirstPrime(60, 2n)` 自动生成；否则 q64 不为 0 用 q64；
+  否则用旧的 usint q（向后兼容旧小 demo）。
+- `SampleUniform` 改用 `std::uniform_int_distribution<uint64_t>(0, m_qUsed-1)`，
+  保证大模数下采样正确（旧版用 usint 会截断到 32 位）。
+- `MaxCoeffAbsDiff` / `ElementToString` 中 `q` 由 `usint` 改为 `uint64_t`
+  （`GetModulus().ConvertToInt()` 返回 uint64_t，旧 `static_cast<usint>` 会截断大 q）。
+- **不动** KeyGen/Encrypt/Decrypt/Add/HomMul/Relin/Automorphism 的数学语义——
+  它们通过环参数与 NativeInteger 工作，天然支持大 q，仅需让构造路径能装下 q。
+
+### 2. 实现「归约到 BLAS」内核（`bchp.h` / `bchp.cpp`）
+新增论文核心算法 **`ModularMatMul_dgemm`**：把模 q 整数矩阵乘归约到 OpenBLAS dgemm。
+- **多段数字分解（digit decomposition）**：基 base=2^15，把每个 [0,q) 系数 c 拆成
+  L 段 c = Σ_l c_l·base^l，c_l ∈ [0,base)。L = ⌈log_base(q)⌉（q≈2^60 → L=4）。
+- **精度保证**：把 A、B 各展开成 L 个「段矩阵」（n×cols，列优先 double），每个段系数 < base。
+  对每对 (l,m) 调一次 `cblas_dgemm` 算 T = A_l^T · B_m，每个元素 < n·base²=2^44 < 2^53
+  → **精确取整**，无浮点误差。
+- **模 q 归约**：外层权重 base^{l+m} 可能 > 2^53，不能直接乘进 double。故把外层加权留在
+  uint64：对每个元素，用 `unsigned __int128` 计算 (wA mod q)·(wB mod q)·T_ij mod q，累加到
+  uint64 结果 R。最终 R 即 C mod q，按列打包成环元素返回。
+- 配套辅助函数 `FlattenToDoubleMatrix`（按 limb 取段展开）、`PackFromDoubleMatrix`（回收）。
+
+### 3. 新增 CC-MM 明文核 `Algorithm4_CCMM_Cores`（对应论文 §6.3）
+- 结构 `CCMMCores{A1A2, A1B2, B1A2, B1B2}`，函数对两个矩阵密文
+  调 **4 次** `ModularMatMul_dgemm`，对应论文 §6.3 的四个明文核。
+- 完整 CC-MM 还需重线性化/key-switch；本教学实现聚焦「归约到 4 次 BLAS dgemm」
+  这一计算核心（§6.3 的实测对象），返回四个明文核供 demo 计时与正确性验证。
+
+### 4. 重写 `bchp_demo.cpp`（4 个演示，符合论文规模）
+- 入口参数：**N=2^14=16384、q≈2^60**（FirstPrime 自动生成 NTT-friendly 素数）、k=2、nu=4。
+- **演示 A**（保留升级）：矩阵 RLWE 加密/解密，验证 S*·A + B ≈ Δ·M（参数升级到大 q）。
+- **演示 B**：Algorithm 6 CP-MM——**BLAS 归约核 vs NTT 朴素三重循环基线**：
+  对同一核矩阵分别用 `ModularMatMul_dgemm` 与朴素环乘计算，比较结果一致性（应完全一致）
+  与耗时，体现论文「归约到 BLAS」的意义。
+- **演示 C**：**CC-MM 多规模对照（256/512/1024）**——每个规模做一次完整的 4 核 dgemm 归约，
+  打印耗时表格。为控制内存，CC-MM 用单独的适中环上下文（N=2^11=2048 ≥ 最大 d=1024），
+  q 仍用 ~2^60。这与论文 §6.3 同量级，**目标 5 秒以上**。
+- **演示 D**（保留升级）：自同构 σ_3 + Algorithm 4 C-MT 转置，解密验证。
+- 所有演示均用 **真实 RLWE 加密/解密 + 误差统计（MaxCoeffAbsDiff）** 验证正确性。
+
+### 5. 详细中文注释
+- 所有新增/修改函数逐行中文注释，标注对应论文章节/公式/算法编号。
+- `ModularMatMul_dgemm` 重点注释数字分解原理与 double 精度边界（2^53）的推导、
+  `unsigned __int128` 模 q 累加的必要性。
+- `bchp.cpp` 头注释与 `bchp.h` 头注释更新，反映新增的 BLAS 归约内核与 CC-MM 核。
+
+## 风险与说明（请在服务器验证）
+- **精度**：base=2^15、最大 n=NCC=2^11 时，n·base²=2^11·2^30=2^41 < 2^53 ✓；
+  若将 CP-MM 也用 N=2^14：2^14·2^30=2^44 < 2^53 ✓ 均安全。
+- **内存**：CC-MM 1024 规模下，每个明文核展开 L=4 段 ×2 操作数 ≈ 256MB 级别，
+  4 核串行执行（每核局部 seg 在出作用域即释放），峰值可控。若服务器内存紧张可减小 d。
+- **`unsigned __int128`**：依赖 GCC/Clang 扩展（服务器 GCC 16.1.1 支持）；
+  OpenFHE 在 NATIVEINT=64 下也用同款 `__int128`，环境一致。
+- **耗时量级**：教学版单线程，d=256 预计 5–20s（满足「5 秒以上」），d=1024 预计
+  数百秒；与论文 §6.3 同量级。差异来自硬件（论文用 Xeon 12 核）、BLAS 线程数、
+  实现优化程度。可在 `bchp_demo_ns::DemoC_CCMM_MultiScale` 中调整 `dims` 列表裁剪规模。
+- **CC-MM 完整性**：本实现聚焦 §6.3 实测的「4 次 dgemm 归约」计算核心，
+  未实现完整 CC-MM 的重线性化/key-switch 后处理（那是另一层成本，论文另作分析）。
+
+## 验证（请在服务器上执行）
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPENFHE_PREFIX=$HOME/openfhe-install
+cmake --build build -j
+# 确认已安装 OpenBLAS（Ubuntu: sudo apt-get install libopenblas-dev）
+export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
+./build/AppDemo -t 4
+```
+预期：
+- 演示 A：最大解密误差远小于 q/2 ≈ 2^59 ✓（结构正确）。
+- 演示 B：BLAS 归约核与朴素三重循环结果完全一致（最大系数差 = 0），体现归约精确性。
+- 演示 C：CC-MM 256×256 耗时 5–20 秒（满足「5 秒以上」），512/1024 依次递增，
+  打印表格与论文 §6.3 同量级。
+- 演示 D：C-MT 转置后解密误差 < q/2 ✓。
+
+若编译/运行出错（如 `__int128`、`FirstPrime` 调用、`uniform_int_distribution<uint64_t>`
+等），把输出贴出，我据实修正 API 调用。

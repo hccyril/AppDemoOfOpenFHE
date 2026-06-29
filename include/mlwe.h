@@ -38,6 +38,7 @@
 #ifndef OPENFHE_MLWE_H
 #define OPENFHE_MLWE_H
 
+#include <cstdint>
 #include <random>
 #include <string>
 #include <vector>
@@ -71,16 +72,38 @@ using RingElement = lbcrypto::NativePoly;
 //------------------------------------------------------------------------------
 // 对应 MLWE 问题的可调参数。以 Kyber-512 风格为参考（n=256, q=3329, k=2），
 // 但为便于演示，默认采用更小的安全参数（运行快、可读性好）。
+//
+// 关于模数 q 的位宽（重要）：
+//   OpenFHE 的 usint 是 uint32_t（最大 ~4.3×10^9），无法装下论文级的大模数
+//   （如 q≈2^60）。为此本结构体同时提供：
+//     - q   : usint  字段（≤2^32，向后兼容旧的小模数 demo）；
+//     - q64 : uint64_t 字段（可装 2^60 量级模数，用于 BCHP 论文复现）。
+//   约定：构造 MLWEContext 时，若 q64 != 0 则优先使用 q64；否则使用 q。
+//   另有 useAutoPrime=true 时，由 FirstPrime(60, 2n) 自动生成 ~2^60 的 NTT-friendly 素数，
+//   此时 q64 字段会被填上自动生成的素数，q 字段仅存低 32 位（仅用于显示，不参与运算）。
 struct MLWEParams {
     usint n;          // 多项式环的维数（次数），x^n+1 中 n，必须为 2 的幂
     usint k;          // 模块的秩（rank），即 R_q 向量的维数
-    usint q;          // 模数（必须为素数，且满足 1 mod 2n，使 x^n+1 在 Z_q 上完全分裂）
+    usint q;          // 模数（≤2^32，向后兼容；仅当 q64==0 且非 auto-prime 时使用）
+    uint64_t q64;     // 模数（64-bit，可装 2^60 量级；优先级高于 q）
+    bool useAutoPrime; // 为 true 时由 FirstPrime(60, 2n) 自动生成大素数 q64
+    usint qBits;      // useAutoPrime 时生成的素数位数（默认 60，受 MAX_MODULUS_SIZE 限制）
     usint nu;         // 噪声的离散高斯参数 λ（标准差 σ 的倒数 / 截断半径相关）
     usint base;       // （可选）用于 gadget 分解的基 b，构造 G 矩阵时使用
 
+    // 旧接口（小模数 demo）保持兼容：n/k/q/nu/base。
+    // q64=0 且 useAutoPrime=false 时，按原逻辑使用 usint q。
     MLWEParams(usint n_ = 256, usint k_ = 2, usint q_ = 7681,
                usint nu_ = 8, usint base_ = 0)
-        : n(n_), k(k_), q(q_), nu(nu_), base(base_) {}
+        : n(n_), k(k_), q(q_), q64(0), useAutoPrime(false),
+          qBits(60), nu(nu_), base(base_) {}
+
+    // 新接口（大模数 / 自动素数）：显式给出 64-bit q。
+    // q64_ != 0 时直接使用；autoPrime=true 时由 FirstPrime 自动生成（忽略 q64_）。
+    MLWEParams(usint n_, usint k_, uint64_t q64_, bool autoPrime,
+               usint nu_, usint base_ = 0)
+        : n(n_), k(k_), q(static_cast<usint>(q64_)), q64(q64_),
+          useAutoPrime(autoPrime), qBits(60), nu(nu_), base(base_) {}
 };
 
 //------------------------------------------------------------------------------
@@ -167,6 +190,10 @@ public:
     //--------------------------------------------------------------
     const MLWEParams& GetParams() const { return m_params; }
 
+    // 以 uint64_t 返回实际使用的模数（自动取 q64 优先于 q）。
+    // 这样无论小模数（q）还是大模数（q64），上层都能用统一接口拿到真实模数。
+    uint64_t GetModulusU64() const { return m_qUsed; }
+
     // 获取环参数（用于构造新的 RingElement）
     // 获取环参数（用于构造新的 RingElement）
     // 注意：OpenFHE 中 ILParamsImpl<NativeInteger> 是 NativePoly 对应的环参数类型，
@@ -215,6 +242,9 @@ public:
 
 private:
     MLWEParams m_params;
+    // 实际使用的模数（64-bit）：构造时根据 useAutoPrime/q64/q 决定。
+    // 上层（含 BCHP BLAS 归约）统一通过 GetModulusU64() 读取它，做模 q 运算。
+    uint64_t m_qUsed{0};
     // 环参数：描述 R_q（模数 q、维数 n、2n 次单位根）
     // 注意：使用 shared_ptr 持有，因为 OpenFHE 的 RingElement 内部以
     // shared_ptr<const ILParamsImpl<NativeInteger>> 引用环参数。

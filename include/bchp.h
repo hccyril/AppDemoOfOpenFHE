@@ -7,8 +7,10 @@
 // 本头文件实现「论文专属」的方案组件（区别于 mlwe.h 中的通用同态算子）：
 //   - Toeplitz 结构 S* = Toep(sk)：由私钥 sk 构造的 (k·d)×k 结构矩阵；
 //   - 矩阵形式 RLWE 加密 / 解密：明文矩阵 M 的加密 = (A, B)，满足 S*·A + B ≈ Δ·M；
-//   - Algorithm 6 CP-MM：明文矩阵 U 与矩阵密文 M̂=(A,B) 相乘，归约为 BLAS dgemm；
-//   - Algorithm 4 C-MT 转置：用自同构（Algorithm 3 Tweak）对矩阵密文做「转置打包」。
+//   - Algorithm 6 CP-MM：明文矩阵 U 与矩阵密文 M̂=(A,B) 相乘，明文核归约到 BLAS dgemm；
+//   - Algorithm 4 C-MT 转置：用自同构（Algorithm 3 Tweak）对矩阵密文做「转置打包」；
+//   - 【论文核心】明文核「归约到 BLAS」：ModularMatMul_dgemm（多段数字分解）；
+//   - Algorithm 4 CC-MM 的四个明文核（4 次 dgemm，对应论文 §6.3）。
 //
 // 依赖：
 //   - mlwe 模块（RingElement、MLWEContext、MLWEScheme 及其同态算子）；
@@ -22,6 +24,7 @@
 
 #include "mlwe.h"
 
+#include <cstdint>
 #include <vector>
 
 namespace bchp {
@@ -34,6 +37,10 @@ using mlwe::MLWEScheme;
 using mlwe::MLWEPublicKey;
 using mlwe::MLWESecretKey;
 using mlwe::MLWECiphertext;
+
+// 用 uint64_t 承载模 q（论文级 q≈2^60 超出 usint=uint32_t 范围）。
+// 本模块所有模 q 运算（含 BLAS 归约）统一使用 64-bit 模数。
+using Modulus = uint64_t;
 
 //==============================================================================
 // 数据结构：矩阵密文（Matrix RLWE Ciphertext）
@@ -142,6 +149,79 @@ MatrixCiphertext Algorithm6_CPMM(const MatrixCiphertext& ct,
 MatrixCiphertext Algorithm4_CMT_Transpose(const MatrixCiphertext& ct,
                                           usint k,
                                           const MLWEContext& ctx);
+
+//==============================================================================
+// 论文核心：「归约到 BLAS」—— 模 q 整数矩阵乘 → OpenBLAS 浮点 dgemm
+//==============================================================================
+// 论文 §1.1 / §5 的核心贡献：把同态（明文核）矩阵乘法归约为高度优化的明文
+// 浮点 BLAS（OpenBLAS dgemm）。难点在于：环系数是模 q 的大整数（q≈2^60），
+// 而 double 只有 53 bit 精确整数（2^53≈9×10^15），直接乘会溢出丢精度。
+//
+// 解决方案——digit decomposition（数字分解）：
+//   选基 base（取 2^15），把每个 [0,q) 系数 c 写成 c = c_lo + base·c_hi，
+//   其中 c_lo, c_hi ∈ [0, base)。由于 base²·N < 2^53（N 为累加维度），
+//   dgemm 的乘加全程在 double 精确整数范围内，结果可无损取整。
+//   A·B = (A_lo+A_hi·base)(B_lo+B_hi·base)
+//       = A_lo·B_lo + base·(A_lo·B_hi + A_hi·B_lo) + base²·A_hi·B_hi
+//   四项各调一次 cblas_dgemm（列优先 double），合成后逐元素 mod q 归约。
+
+// FlattenToDoubleMatrix：把「环元素向量」按系数展开成一个 double 矩阵。
+//   每个环元素贡献一列（n 个系数 → n 行），共 cols 个环元素 → n×cols double 矩阵，
+//   列优先存储（与 cblas_dgemm 的 ColMajor 约定一致）。
+//   limb 指定取系数的第几「数字段」：limb=0 取 (c mod base)，limb=k 取
+//   (c / base^k) mod base。这样把 [0,q) 的大系数拆成多段（每段 < base），
+//   保证 dgemm 乘加结果 < n·base² < 2^53，落在 double 精确整数范围内。
+std::vector<double> FlattenToDoubleMatrix(const std::vector<RingElement>& elems,
+                                          Modulus base, usint limb);
+
+// PackFromDoubleMatrix：FlattenToDoubleMatrix 的逆操作。
+//   把一个 n×cols 的 double 矩阵（列优先）逐元素四舍五入、mod q，重新打包成环元素向量。
+//   用于 dgemm 结果回收为密文。
+std::vector<RingElement> PackFromDoubleMatrix(const std::vector<double>& mat,
+                                              usint n, usint cols,
+                                              Modulus q,
+                                              const MLWEContext& ctx);
+
+// ModularMatMul_dgemm：论文「归约到 BLAS」的明文核。
+//   输入两个「环元素向量」A（cols_a 个）、B（cols_b 个），每个环元素含 n 个系数。
+//   视 A 为 n×cols_a 矩阵、B 为 n×cols_b 矩阵，计算它们的「转置乘」？
+//   —— 仔细对应论文：CP-MM 中 (A·U) 的「行 i 列 j」= Σ_l A[i][l]·U[l][j] 是
+//      环元素之间的环乘累加。展开到系数层面，这正是「系数矩阵乘」。
+//   为忠实论文并把计算交给 BLAS，本函数把每个环元素当一列，做标准的
+//   C = A^T · B（n×cols_a 的 A 转置后 cols_a×n，乘 n×cols_b 的 B → cols_a×cols_b），
+//   对应「内积型」矩阵乘（CP-MM 的 A·U 按「列内积」结构）。
+//   返回 cols_a×cols_b 的环元素矩阵（行优先展平为向量），每个元素是一个环元素。
+//
+//   逐元素 mod q 由 digit-decomposition + dgemm + 取整归约 保证精确。
+std::vector<RingElement> ModularMatMul_dgemm(const std::vector<RingElement>& A,
+                                             const std::vector<RingElement>& B,
+                                             Modulus q, Modulus base,
+                                             const MLWEContext& ctx);
+
+//------------------------------------------------------------------------------
+// Algorithm 4 CC-MM（密文×密文矩阵乘法，归约到 4 次 dgemm）—— 对应论文 §6.3
+//------------------------------------------------------------------------------
+// 【论文 §5.3 / Algorithm 4】两个矩阵密文 ct1=(A1,B1)、ct2=(A2,B2) 相乘，
+// 结果密文的核心由四个明文核矩阵乘构成（论文 §6.3 实验对象）：
+//   A1·A2, A1·B2, B1·A2, B1·B2
+// 每个明文核都用 ModularMatMul_dgemm（即 BLAS dgemm）完成——这正是论文 §6.3
+// 所测的「Lightweight CC-MM」的工作负载（256×256 ~ 18s，1024×1024 ~ 278s）。
+//
+// 本函数聚焦「归约到 4 次 BLAS dgemm」这一计算核心并返回四个结果矩阵，
+// 供 demo 计时与正确性验证（完整 CC-MM 还需重线性化/key-switch，本教学实现
+// 聚焦 BLAS 归约核，故返回四个明文核矩阵而非合成密文）。
+//
+// 输入：两个矩阵密文；输出：四个环元素向量（A1A2, A1B2, B1A2, B1B2）。
+struct CCMMCores {
+    std::vector<RingElement> A1A2;  // A1·A2
+    std::vector<RingElement> A1B2;  // A1·B2
+    std::vector<RingElement> B1A2;  // B1·A2
+    std::vector<RingElement> B1B2;  // B1·B2
+};
+CCMMCores Algorithm4_CCMM_Cores(const MatrixCiphertext& ct1,
+                                const MatrixCiphertext& ct2,
+                                Modulus q, Modulus base,
+                                const MLWEContext& ctx);
 
 }  // namespace bchp
 

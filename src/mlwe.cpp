@@ -52,37 +52,55 @@ MLWEContext::MLWEContext(const MLWEParams& params)
     }
 
     // ------------------------------------------------------------
-    // 步骤 2：处理模数 q
+    // 步骤 2：确定实际使用的模数 m_qUsed（64-bit）
     // ------------------------------------------------------------
-    // OpenFHE 的 ILParams2N 需要模数 q 满足：
+    // 模数优先级：
+    //   (a) useAutoPrime=true → 由 FirstPrime(qBits, 2n) 自动生成 ~2^60 NTT-friendly 素数；
+    //   (b) 否则若 q64 != 0   → 直接使用用户指定的 64-bit 模数；
+    //   (c) 否则              → 使用旧的 usint q（≤2^32，向后兼容小 demo）。
+    //
+    // OpenFHE 的 ILParamsImpl 需要模数 q 满足：
     //   (1) q 为素数；
     //   (2) q ≡ 1 (mod 2n)，保证 2n 次本原单位根 ω_{2n} 存在于 Z_q 中。
     // 这两点共同保证 x^n+1 在 Z_q 上完全分裂，NTT 变换可正常工作。
     //
-    // 这里只做“合法性校验”：若用户给定的 q 不满足条件，直接抛出异常，
-    // 提示用户更换参数。这样把参数选择的责任交给上层（避免静默改参数
-    // 导致与用户预期不一致）。
+    // 注意：usint 是 uint32_t，无法装下 2^60 量级的模数（论文 BCHP §6.1 用 q≈2^60）。
+    //       因此大模数场景必须走 64-bit 路径（q64 或 auto-prime）。
     usint n = params.n;
-    usint q = params.q;
-    if (q % (2 * n) != 1) {
+    if (params.useAutoPrime) {
+        // 由 FirstPrime 自动生成满足 q ≡ 1 (mod 2n) 的素数，位数由 qBits 给出。
+        // OpenFHE 在 NATIVEINT=64 下 MAX_MODULUS_SIZE=60，故 qBits 上限为 60。
+        // FirstPrime(nBits, m) 返回 NativeInteger，转换为 uint64_t。
+        typename RingElement::Integer p =
+            lbcrypto::FirstPrime<typename RingElement::Integer>(
+                params.qBits, static_cast<uint64_t>(2 * n));
+        m_qUsed = static_cast<uint64_t>(p.ConvertToInt());
+    } else if (params.q64 != 0) {
+        m_qUsed = params.q64;
+    } else {
+        m_qUsed = static_cast<uint64_t>(params.q);
+    }
+
+    // 合法性校验：q ≡ 1 (mod 2n)。
+    if (m_qUsed % (2ull * n) != 1ull) {
         std::ostringstream oss;
-        oss << "MLWEContext: 模数 q=" << q << " 必须满足 q ≡ 1 (mod 2n="
-            << (2 * n) << ")，"
+        oss << "MLWEContext: 模数 q=" << m_qUsed << " 必须满足 q ≡ 1 (mod 2n="
+            << (2ull * n) << ")，"
             << "以保证 x^n+1 在 Z_q 上完全分裂。请更换 q。";
         throw std::invalid_argument(oss.str());
     }
 
     // ------------------------------------------------------------
-    // 步骤 3：构造 ILParams2N（环参数对象）
+    // 步骤 3：构造 ILParamsImpl（环参数对象）
     // ------------------------------------------------------------
-    // ILParams2N(cyclotomicOrder, modulus, rootOfUnity)
+    // ILParamsImpl(cyclotomicOrder, modulus, rootOfUnity)
     //   - cyclotomicOrder = 2n（因为 Φ_{2n}=x^n+1，分圆域阶数为 2n）
-    //   - modulus         = q
+    //   - modulus         = m_qUsed（64-bit 模数）
     //   - rootOfUnity     = q 中的 2n 次本原单位根，由 RootOfUnity(2n, q) 计算
     // 注意：modulus / root 必须是 RingElement::Integer（NativeInteger）类型，
     //   OpenFHE 的 RootOfUnity 是模板函数，参数与返回类型一致。
     usint cyclotomicOrder = 2 * n;
-    typename RingElement::Integer modulus(q);
+    typename RingElement::Integer modulus(m_qUsed);
     typename RingElement::Integer root =
         lbcrypto::RootOfUnity(cyclotomicOrder, modulus);
 
@@ -166,14 +184,15 @@ RingElement MLWEContext::SampleGaussian() const {
 // 数学：每个系数独立均匀取自 Z_q = {0,1,...,q-1}。
 // 用标准库 uniform_int_distribution 在 [0, q-1] 内采样。
 RingElement MLWEContext::SampleUniform() const {
-    std::uniform_int_distribution<int64_t> dist(
-        0, static_cast<int64_t>(m_params.q - 1));
+    // 用实际使用的 64-bit 模数 m_qUsed（兼容大模数 q≈2^60 与旧的小模数）。
+    // std::uniform_int_distribution<uint64_t> 需要范围上限为 64-bit。
+    std::uniform_int_distribution<uint64_t> dist(0, m_qUsed - 1);
     // 注意：第三个参数 true 表示初始化内部系数向量为全零，
     // 否则 m_values 指针为空，访问 operator[] 会导致段错误。
     RingElement e(m_elemParams, Format::COEFFICIENT, true);
     for (usint i = 0; i < m_params.n; ++i) {
         // 注意：NativePoly 没有 SetValueAtIndex 方法，使用 operator[] 赋值。
-        // 将 int64_t 转为 NativeInteger 类型。
+        // 将 uint64_t 转为 NativeInteger 类型。
         e[i] = lbcrypto::NativeInteger(dist(m_rng));
     }
     return e;
@@ -637,14 +656,14 @@ RingElement VectorToElement(const std::vector<int64_t>& coeffs,
 std::string ElementToString(const RingElement& e, bool all) {
     std::vector<int64_t> v = ElementToVector(e);
     usint n = v.size();
-    usint q = 0;
-    // 获取模数（从环参数）
-    // 这里通过 e.GetModulus() 拿到 NativeInteger，转 int64_t
-    q = static_cast<usint>(e.GetModulus().ConvertToInt());
+    // 获取模数（从环参数），用 uint64_t 完整保留（q 可能达 2^60，超出 usint=uint32_t 范围）。
+    // ConvertToInt() 返回 NativeInt（uint64_t），不做截断。
+    uint64_t q = static_cast<uint64_t>(e.GetModulus().ConvertToInt());
 
     // 把 [0,q) 表示转为带符号表示 [−⌊q/2⌋, ⌊q/2⌋)
+    // 注意：q 可能 ~2^60，q/2 < 2^59，仍在 int64_t（max 2^63-1）正数范围内，安全。
     auto toSigned = [q](int64_t x) -> int64_t {
-        if (x > (int64_t)q / 2) x -= (int64_t)q;
+        if (static_cast<uint64_t>(x) > q / 2) x -= static_cast<int64_t>(q);
         return x;
     };
 
@@ -692,10 +711,11 @@ int64_t MaxCoeffAbsDiff(const RingElement& a, const RingElement& b) {
     std::vector<int64_t> va = ElementToVector(a);
     std::vector<int64_t> vb = ElementToVector(b);
     usint n = std::min(va.size(), vb.size());
-    usint q = static_cast<usint>(a.GetModulus().ConvertToInt());
+    // 模数用 uint64_t 完整保留（q 可能达 2^60，超出 usint=uint32_t 范围）。
+    uint64_t q = static_cast<uint64_t>(a.GetModulus().ConvertToInt());
 
     auto toSigned = [q](int64_t x) -> int64_t {
-        if (x > (int64_t)q / 2) x -= (int64_t)q;
+        if (static_cast<uint64_t>(x) > q / 2) x -= static_cast<int64_t>(q);
         return x;
     };
 
@@ -703,7 +723,7 @@ int64_t MaxCoeffAbsDiff(const RingElement& a, const RingElement& b) {
     for (usint i = 0; i < n; ++i) {
         int64_t d = std::llabs(toSigned(va[i]) - toSigned(vb[i]));
         // 考虑环绕：差值也可能是 q - d（当两个系数分别落在 0 和 q-1 附近时）
-        d = std::min(d, (int64_t)q - d);
+        d = std::min<int64_t>(d, static_cast<int64_t>(q) - d);
         maxDiff = std::max(maxDiff, d);
     }
     return maxDiff;
