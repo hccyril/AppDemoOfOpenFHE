@@ -76,3 +76,35 @@
 
 本机无执行环境，按你的要求我完成代码修改即结束任务，请你在服务器编译运行验证，若遇 `\_\_int128`/`FirstPrime`/`uniform\_int\_distribution<uint64\_t>` 等 API 报错，把输出发我据实修正。
 
+# 20260701 10:30
+
+四个问题全部修复完成。我先在源头核实了 OpenFHE 的实际语义，再据根因逐一处理：
+
+## 修复总结
+
+### (1) 编译告警 `__int128`
+直接阅读 OpenFHE 源码确认：`openfhe/src/core/include/math/hal/basicint.h` 在 `NATIVEINT=64 + HAVE_INT128` 下已把 `unsigned __int128` 别名化为 `DoubleNativeInt`，并在其内部大量使用。把 `src/bchp.cpp` 模乘累加、`src/bchp_demo.cpp` 朴素基线累加器里的裸 `unsigned __int128` 全部改为 `DoubleNativeInt`，源码里不再出现裸 `__int128` token（只在说明性注释中提及），`-Wpedantic` 告警消除。
+
+### (2) 演示 A 解密错误 ≈ q/2
+读 `nbtheory-impl.h::FirstPrime` 与 `basicint.h` 确认根因：
+- `FirstPrime(nBits, m)` 返回的是「**至少 nBits+1 位**」的素数；
+- `MAX_MODULUS_SIZE = 60`（NATIVEINT=64）；
+- 旧路径 `qBits=60` → 生成 **61-bit** 素数（用户实测 q=1152921504607338497>2^60）→ 超出安全上限 → NTT/Barrett 失败 → 误差塌缩到 q/2。
+
+修复：主上下文与演示 C 的独立上下文都把 `qBits` 设为 **59**。因为 m=2n=32768=2^15，`2^59 mod 2^15 = 0`，`FirstPrime(59,32768)` 起始即 `q=2^59+1`，是 **60-bit**、恰好落在上限内且 `q≡1 mod 2n` ✓。
+
+### (3) 演示 B 挂死 10 小时
+根因不在 BLAS，而在 `ModularMatMul_dgemm` 的旧段数判断：
+```cpp
+Modulus cover = base; while (cover < q) { cover *= base; ++L; }
+```
+当 61-bit q > 2^60 时，cover 经过 2^15、2^30、2^45、2^60（仍 < q），再 `*= base` 得 **2^75 溢出回绕为 2^11** → forever cover < q → **死循环** = 10 小时。
+
+qBits=59 已让 q<2^60，循环本可正常退出（L=4）；但我还是把判断改成按位长计算 `L = ⌈bitlen(q)/bitlen(base)⌉`，**不再依赖任何乘法递增**，无论将来 q 怎么变都不会再溢出/死循环。并加 `baseBits==0` 退化保护。
+
+随带在演示 B 各子步骤加 `std::cout.flush()` + `[1/2]…[2/2]…计算中/完成` 进度行，演示 C 表头行也刷新——避免「黑屏后突然出结果」。
+
+### (4) 入口拆分 + 注释 + dev-logs
+`-t 4`→`bchp_demo(1)` 仅演示 A，`-t 5`→`bchp_demo(2)` 跑 B/C/D，`-t 6`→`bchp_demo(0)` 全部（已在上一轮完成并核验）。所有改动处加了中文逐点注释（含 FirstPrime 语义、段数溢出推导、DoubleNativeInt 由来）。已在 `docs/dev-logs.md` 追加新条目记录诊断与全部修改。
+
+涉及文件：`src/bchp.cpp`、`src/bchp_demo.cpp`（`src/AppDemo.cpp` 已是目标状态）、`docs/dev-logs.md`。尚未编译验证（此环境无 OpenBLAS/OpenFHE 安装），请在服务器上 `cmake --build` + `./build/AppDemo -t 4` 与 `-t 5` 实跑确认。

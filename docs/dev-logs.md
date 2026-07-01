@@ -721,3 +721,89 @@ export LD_LIBRARY_PATH=$HOME/openfhe-install/lib:$LD_LIBRARY_PATH
 
 若编译/运行出错（如 `__int128`、`FirstPrime` 调用、`uniform_int_distribution<uint64_t>`
 等），把输出贴出，我据实修正 API 调用。
+
+---
+
+# 2026-07-01 修复 BCHP 演示的编译告警 / 演示 A 解密错误 / 演示 B 长时间挂死
+
+## 问题
+在前次复现验证基础上，服务器实测又暴露 4 个问题：
+1. **编译告警**：`src/bchp.cpp`、`src/bchp_demo.cpp` 中直接写 `unsigned __int128`，
+   被 `-Wpedantic` 告警「ISO C++ does not support '__int128'」（__int128 乃 GCC/Clang 扩展）。
+2. **演示 A 结果错误**：解密误差 ≈ q/2（用户报告 576454206132354970，q/2≈2^60），
+   结构上等同于「解密失败」。实测 q=1152921504607338497（>2^60，为 61-bit）。
+3. **演示 B 挂死 >10 小时**：仅打印「核矩阵规模」一行后无任何后续输出，CPU 100%。
+4. **入口需拆分**：希望 `-t 4` 只跑演示 A，`-t 5` 跑其余（B/C/D），便于隔离验证。
+
+## 原因分析
+
+### A. 演示 A 解密错误 ≈ q/2：q 超出 OpenFHE 安全模数上限
+- 查看 `openfhe/src/core/include/math/hal/basicint.h`：NATIVEINT=64 且 HAVE_INT128 时
+  `MAX_MODULUS_SIZE = 60`，且 `DoubleNativeInt = unsigned __int128`。
+- 查看 `nbtheory-impl.h::FirstPrime(nBits, m)`：起始候选 `q = 2^nBits`，再调整为
+  `q ≡ 1 (mod m)`、不小于 `2^nBits`。即「至少 nBits+1 位」。
+  - 旧路径 `qBits=60` → 候选 ≥2^60 + (调整) → 落到 **61-bit** 素数（用户实测 q≈2^60.x）。
+  - 61-bit > MAX_MODULUS_SIZE=60 → NTT/Barrett 归约出错 → 解密误差塌缩到 q/2。
+- **修复**：`bchp_demo()` 入口与演示 C 的独立上下文都把 `qBits` 改为 **59**。
+  - 对 m=2n=32768=2^15：`2^59 mod 2^15 == 0`，故 `FirstPrime(59,32768)` 起始即
+    `q=2^59+1`（**60-bit**、恰在 MAX_MODULUS_SIZE=60 上限内）且 `q≡1 mod 2n` ✓。
+
+### B. 演示 B 挂死 10 小时：段数判断循环 uint64 溢出 → 死循环
+根因就在 `src/bchp.cpp::ModularMatMul_dgemm` 旧的段数计算：
+```cpp
+Modulus cover = base;  while (cover < q) { cover *= base; ++L; }
+```
+- base=2^15、q 为 61-bit（>2^60）时，cover 依次 = 2^15、2^30、2^45、**2^60**（此时仍 < q）。
+- 再 `cover *= base` = 2^75 → **uint64 溢出回绕为 2^11** → cover 永远追不上 q →
+  `while (cover < q)` 成为 **死循环** → 演示 B「核矩阵规模」之后无限空转，挂死 10 小时。
+- 此 bug 与 A 的根因同源（都因 61-bit q）：A 修了 qBits，B 也会被一并解除（q<2^60 时
+  cover 在 2^60 处即 ≥ q，循环正常退出，L=4）。但「乘法递增判段」本身是脆弱设计，
+  任何意外的 61-bit q 都会再次触发死循环，故必须从根上消除。
+
+### C. `__int128` 编译告警
+源码出现裸 `unsigned __int128` token → `-Wpedantic` 报「ISO C++ does not support」。
+OpenFHE 在 `basicint.h` 已把该扩展类型别名化为 `DoubleNativeInt`（NATIVEINT=64+HAVE_INT128
+时即 `unsigned __int128`）并在其头文件中大量使用。改用此别名即可消除告警并与 OpenFHE 一致。
+
+## 修改过程
+
+### 1. 入口拆分（`src/AppDemo.cpp`）
+- 菜单与 `switch` 新增 case 4/5/6：
+  - `-t 4` → `bchp_demo(1)` 仅演示 A；
+  - `-t 5` → `bchp_demo(2)` 演示 B/C/D；
+  - `-t 6` → `bchp_demo(0)` 全部 A/B/C/D（向后兼容）。
+- `bchp_demo` 声明改为 `int bchp_demo(int mode = 0)`，按 mode 路由各 Demo。
+
+### 2. 演示 A 修复（`src/bchp_demo.cpp`）
+- 主上下文 `qBits = 59`，并 `params.qBits = qBits;` 显式覆盖；打印注释更新为「59-bit 素数」。
+- 演示 C 的独立上下文 `ccParams.qBits = 59;` 同步处理。
+- 在入口处加详细注释说明 FirstPrime「至少 nBits+1 位」语义与 59 的取值理由。
+
+### 3. 演示 B 挂死根除（`src/bchp.cpp`）
+- 把「乘法递增判段」改为「按位长计算」：
+  ```cpp
+  baseBits = log2(base);            // 2^15 → 15
+  qBitsUsed = bitlen(q);            // q<2^60 → 60
+  L = ceil(qBitsUsed / baseBits);    // 4
+  ```
+  完全不依赖 cover 乘法递增，**无论 q 多大都不会溢出/死循环**。并对 baseBits==0
+  退化处理（理论不发生）。注释详述旧实现的溢出回绕（2^75→2^11）过程。
+
+### 4. `__int128` 告警修复
+- `src/bchp.cpp` 的模累加：`unsigned __int128 prod` → `DoubleNativeInt prod`。
+- `src/bchp_demo.cpp` 朴素基线：`unsigned __int128 acc` → `DoubleNativeInt acc`。
+- 注释说明 DoubleNativeInt 别名的来源与消除 -Wpedantic 的作用。
+  （`pke/openfhe.h` 经 `basicint.h` 已把 DoubleNativeInt 引入全局命名空间，无需额外 include。）
+
+### 5. 输出可见性（演示 B）
+- 演示 B 在「核矩阵规模」行后加 `std::flush`；
+- 进入 BLAS 路径前打印 `[1/2] BLAS 归约核计算中 ...`，完成后打印「完成」；
+- 进入朴素基线前打印 `[2/2] 朴素三重循环基线计算中 ...`，完成后打印「完成」。
+  —— 即使将来某步意外变慢，用户也能定位到具体子步骤，而非整段黑屏。
+
+## 风险与验证
+- **q 五十九位取值的等价性已推导**：m=2^15 -> q=2^59+1 (60-bit,合法)。
+- **段数公式对实际值**：baseBits=15、qBitsUsed=60、L=⌈60/15⌉=4，与原（修复前 q<q/2 时的）意图一致，结果不变。
+- **Demo C 仍以 d∈{256,512,1024} 跑**：内部同样调用 ModularMatMul_dgemm，挂死风险随 B 一起根除；
+  精度满足 n·base²=2^41<2^53；内存峰值每核约 256MB 量级、出作用域即释放。
+- 若仍遇其他告警/异常，把编译或运行输出贴出，我据实修正。

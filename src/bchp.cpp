@@ -309,12 +309,36 @@ std::vector<RingElement> ModularMatMul_dgemm(const std::vector<RingElement>& A,
     usint cols_a = static_cast<usint>(A.size());
     usint cols_b = static_cast<usint>(B.size());
 
-    // 段数 L：覆盖 [0,q) 所需的 base-adic 段数（向上取整）。
-    // q 的位数 / log2(base)。
-    usint L = 1;
+    // 段数 L：覆盖 [0,q) 所需的 base-adic 段数（向上取整）= ⌈log2(q)/log2(base)⌉。
+    //
+    // 【关键修复——原 Demo B「10 小时挂死」根因】
+    //   旧实现用「乘法递增」判断段数：
+    //       Modulus cover = base;  while (cover < q) { cover *= base; ++L; }
+    //   当 q 接近或达到 61 bit（旧的 qBits=60 路径生成的 61-bit 素数，>2^60）时，
+    //   cover 依次取 2^15、2^30、2^45、2^60 ——此时 cover(=2^60) 仍 < q(>2^60)，
+    //   再 `cover *= base` 得 2^75，**溢出 uint64 回绕为 2^11**，于是 cover 永远
+    //   追不上 q，`while (cover < q)` 变成**死循环**，这正是演示 B 挂死 10 小时的根因。
+    //
+    //   现改用「按位长计算」L = ⌈bitlen(q)/bitlen(base)⌉，完全不依赖 cover 的乘法递增，
+    //   无论 q 多大都不会溢出、不会死循环。配合上层 qBits=59（q 为 60-bit、<2^60），
+    //   这里得 baseBits=15、qBitsUsed=60、L=⌈60/15⌉=4，与原意图一致。
+    usint baseBits = 0;
     {
-        Modulus cover = base;
-        while (cover < q) { cover *= base; ++L; }
+        Modulus b = base;
+        while (b > 1) { b >>= 1; ++baseBits; }  // base=2^15 → baseBits=15
+    }
+    usint L = 1;  // 段数（base-adic limbs 覆盖 [0,q) 所需的段数，至少 1）
+    if (baseBits == 0) {
+        // base==1 时上界无效（理论不应发生）；退化为单段以保证不死循环。
+        L = 1;
+    } else {
+        usint qBitsUsed = 0;
+        {
+            uint64_t v = q;
+            do { ++qBitsUsed; v >>= 1; } while (v);  // q<2^60 → qBitsUsed=60
+        }
+        L = (qBitsUsed + baseBits - 1) / baseBits;  // 向上取整
+        if (L == 0) L = 1;
     }
 
     // 预展开 A、B 的每一段为列优先 double 矩阵（n×cols）。
@@ -349,15 +373,21 @@ std::vector<RingElement> ModularMatMul_dgemm(const std::vector<RingElement>& A,
             // T 元素 t_ij ∈ [0, n·base²)（< 2^53），先取整得 int64，
             // 再 (wA mod q)·(wB mod q)·t_ij 累加，全程 mod q。
             // 为避免 (wA·wB) 在 uint64 溢出（q≈2^60，wA·wB 可达 2^90），
-            // 用 128-bit 中间量：__int128。OpenFHE 在 NATIVEINT=64 下提供了
-            // unsigned __int128（DoubleNativeInt）。这里直接用编译器内建 __int128。
+            // 需 128-bit 中间量做模乘。
+            //
+            // 【编译告警修复】原写法 `unsigned __int128 prod = ...` 会触发 -Wpedantic
+            //   「ISO C++ does not support '__int128'」—— __int128 是 GCC/Clang 扩展。
+            //   OpenFHE 在 basicint.h 中已把该类型别名化为 `DoubleNativeInt`
+            //   （NATIVEINT=64 且 HAVE_INT128 时即 unsigned __int128），并在其头文件里
+            //   大量使用。这里改用别名 DoubleNativeInt，使本文件不再出现裸 __int128 token，
+            //   从而消除 -Wpedantic 告警，且与 OpenFHE 内部类型保持一致。
             uint64_t wAq = wA % q;
             uint64_t wBq = wB % q;
             for (size_t idx = 0; idx < T.size(); ++idx) {
                 int64_t tij = static_cast<int64_t>(std::llround(T[idx]));
                 uint64_t tijq = static_cast<Modulus>(tij) % q;
                 // R[idx] += (wAq * wBq % q) * tijq % q   —— 全程 mod q
-                unsigned __int128 prod = static_cast<unsigned __int128>(wAq) * wBq % q;
+                DoubleNativeInt prod = static_cast<DoubleNativeInt>(wAq) * wBq % q;
                 prod = prod * tijq % q;
                 R[idx] = (static_cast<uint64_t>(prod) + R[idx]) % q;
             }

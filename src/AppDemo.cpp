@@ -16,7 +16,12 @@ void runtest2();
 int mlwe_demo();
 
 // bchp demo: 论文《Fast Homomorphic Linear Algebra with BLAS》(arXiv:2503.16080) 复现
-int bchp_demo();
+// mode 选择演示子集：
+//   mode=0（默认）= 全部演示 A/B/C/D；
+//   mode=1        = 仅演示 A（矩阵形式 RLWE 加密/解密）；
+//   mode=2        = 除演示 A 外的其余演示（B/C/D）。
+// 该拆分用于：演示 A 与演示 B/C/D 分别验证，避免某个演示阻塞时影响其余演示的可见输出。
+int bchp_demo(int mode = 0);
 
 namespace {
 
@@ -125,7 +130,9 @@ int main(int argc, char* argv[]) {
         std::cout << "  1: Test1 (Simple BFVRNS)" << std::endl;
         std::cout << "  2: Test2 (BFVRNS with multiple parameters)" << std::endl;
         std::cout << "  3: MLWE Demo" << std::endl;
-        std::cout << "  4: BCHP Demo (Homomorphic Linear Algebra with BLAS)" << std::endl;
+        std::cout << "  4: BCHP Demo - A only  (Matrix RLWE encrypt/decrypt)" << std::endl;
+        std::cout << "  5: BCHP Demo - B/C/D  (BLAS CP-MM, CC-MM, C-MT)" << std::endl;
+        std::cout << "  6: BCHP Demo - All    (A+B+C+D)" << std::endl;
         std::cout << "Enter test id (default=1): ";
         if (!(std::cin >> t)) {
             std::cerr << "Invalid input, using default (1)" << std::endl;
@@ -150,8 +157,19 @@ int main(int argc, char* argv[]) {
             exitCode = mlwe_demo();
             break;
         case 4:
-            std::cout << "\nRunning Test 4: BCHP Demo (Homomorphic Linear Algebra with BLAS)" << std::endl;
-            exitCode = bchp_demo();
+            // -t 4：仅执行 BCHP 演示 A（矩阵形式 RLWE 加密/解密），便于单独验证解密误差。
+            std::cout << "\nRunning Test 4: BCHP Demo - A only (Matrix RLWE encrypt/decrypt)" << std::endl;
+            exitCode = bchp_demo(1);
+            break;
+        case 5:
+            // -t 5：执行除演示 A 外的其余 BCHP 演示（B: BLAS CP-MM, C: CC-MM, D: C-MT）。
+            std::cout << "\nRunning Test 5: BCHP Demo - B/C/D (BLAS CP-MM, CC-MM, C-MT)" << std::endl;
+            exitCode = bchp_demo(2);
+            break;
+        case 6:
+            // -t 6：执行全部 BCHP 演示 A/B/C/D（向后兼容旧行为）。
+            std::cout << "\nRunning Test 6: BCHP Demo - All (A+B+C+D)" << std::endl;
+            exitCode = bchp_demo(0);
             break;
         default:
             std::cerr << "Unknown test id: " << t << std::endl;

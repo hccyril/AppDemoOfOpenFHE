@@ -179,7 +179,8 @@ static void DemoB_CPMM_BLAS(const MLWEContext& ctx) {
     const usint cols = 8;
     std::cout << "  核矩阵规模：" << cols << "×" << cols
               << " 环元素（每个含 N=" << n << " 系数），q≈2^"
-              << static_cast<int>(std::log2(static_cast<double>(q))) << "\n";
+              << static_cast<int>(std::log2(static_cast<double>(q))) << "\n"
+              << std::flush;  // 立即刷新，便于在长计算前看到规模信息
 
     // 构造两个核矩阵 A、B：每个环元素的系数取小随机值 ∈ [0, q)。
     // 用固定分布采样，保证两条路径输入一致。
@@ -198,11 +199,13 @@ static void DemoB_CPMM_BLAS(const MLWEContext& ctx) {
     for (usint i = 0; i < cols; ++i) { B.push_back(randElem()); }
 
     // (1) BLAS 归约核路径：ModularMatMul_dgemm（多段数字分解 + dgemm）
+    std::cout << "  [1/2] BLAS 归约核计算中 ..." << std::flush;  // 进度提示
     Timer tBlas;
     tBlas.start();
     std::vector<RingElement> Cblas =
         bchp::ModularMatMul_dgemm(A, B, q, base, ctx);
     double blas_ms = tBlas.ms();
+    std::cout << " 完成\n" << std::flush;
 
     // (2) NTT 朴素环乘基线路径：
     //   直接用 OpenFHE 环乘逐项累加计算 C = A^T·B 的「列内积」结构。
@@ -212,6 +215,7 @@ static void DemoB_CPMM_BLAS(const MLWEContext& ctx) {
     //   为保证可比性，朴素基线直接复算同一个系数矩阵乘：
     //   把 A、B 的系数展开成 n×cols 的 int64 矩阵，朴素三重循环算 C=A^T·B mod q。
     Timer tNaive;
+    std::cout << "  [2/2] 朴素三重循环基线计算中 ..." << std::flush;  // 进度提示
     tNaive.start();
     // 展开系数矩阵：Acoef[l*n + i] = A[l] 的第 i 系数；同理 Bcoef。
     std::vector<uint64_t> Acoef(static_cast<size_t>(n) * cols, 0);
@@ -227,13 +231,19 @@ static void DemoB_CPMM_BLAS(const MLWEContext& ctx) {
         }
     }
     // 朴素三重循环 C = A^T·B（cols×cols），每个元素 = Σ_{i=0}^{n-1} Acoef[i,l1]·Bcoef[i,l2]
-    // 用 __int128 累加保证不溢出，最后 mod q。
+    // 用 128-bit 累加保证不溢出，每步 mod q。
+    //
+    // 【编译告警修复】原写法 `unsigned __int128 acc = 0;` 会触发 -Wpedantic
+    //   「ISO C++ does not support '__int128'」（__int128 乃 GCC/Clang 扩展）。
+    //   改用 OpenFHE 在 basicint.h 中提供的别名 DoubleNativeInt——在 NATIVEINT=64
+    //   且 HAVE_INT128 时它即 unsigned __int128——以避免本文件出现裸 __int128 token，
+    //   消除 -Wpedantic 告警，并与 OpenFHE 内部类型保持一致。
     std::vector<uint64_t> Cnaive(static_cast<size_t>(cols) * cols, 0);
     for (usint l1 = 0; l1 < cols; ++l1) {
         for (usint l2 = 0; l2 < cols; ++l2) {
-            unsigned __int128 acc = 0;
+            DoubleNativeInt acc = 0;
             for (usint i = 0; i < n; ++i) {
-                acc += static_cast<unsigned __int128>(
+                acc += static_cast<DoubleNativeInt>(
                            Acoef[static_cast<size_t>(i) + static_cast<size_t>(l1) * n])
                        * Bcoef[static_cast<size_t>(i) + static_cast<size_t>(l2) * n];
                 acc %= q;  // 每步 mod q 防溢出
@@ -244,6 +254,7 @@ static void DemoB_CPMM_BLAS(const MLWEContext& ctx) {
         }
     }
     double naive_ms = tNaive.ms();
+    std::cout << " 完成\n" << std::flush;
 
     // 比较两条路径：BLAS 核回收的环元素（按列）vs 朴素 Cnaive（列优先 cols×cols）。
     // Cblas 有 cols 个环元素，第 c 个环元素的系数 r（r<cols）应对应 Cnaive[r + c*cols]。
@@ -266,7 +277,8 @@ static void DemoB_CPMM_BLAS(const MLWEContext& ctx) {
               << "  " << (max_diff == 0 ? "✓ 完全一致（BLAS 归约精确）"
                                         : "✗ 存在差异（检查数字分解）") << "\n";
     std::cout << "  >>> 体现论文 §6.2 思想：CP-MM 的明文核被「归约」为 OpenBLAS dgemm，\n"
-              << "      把同态 MatMul 从逐系数 NTT 环乘变成高度优化的浮点 BLAS。\n";
+              << "      把同态 MatMul 从逐系数 NTT 环乘变成高度优化的浮点 BLAS。\n"
+              << std::flush;
 }
 
 //==============================================================================
@@ -293,10 +305,13 @@ static void DemoB_CPMM_BLAS(const MLWEContext& ctx) {
 static void DemoC_CCMM_MultiScale() {
     PrintBar("演示 C：Algorithm 4 CC-MM 多规模对照（256/512/1024，对应论文 §6.3）");
 
-    // 为 CC-MM 单独构造适中环上下文：N=2^11=2048（≥ 最大 d=1024），q≈2^60 自动素数。
+    // 为 CC-MM 单独构造适中环上下文：N=2^11=2048（≥ 最大 d=1024），q≈2^59 自动素数。
+    // 【关键】qBits=59（同主上下文）：FirstPrime(nBits,…) 返回「至少 nBits+1 位」的素数，
+    //   故 FirstPrime(59,…) 生成 ≤2^59 的素数，落在 OpenFHE 安全上限 MAX_MODULUS_SIZE=60 内。
     usint Ncc = 1u << 11;   // = 2048
     usint k = 2, nu = 4;
     MLWEParams ccParams(Ncc, k, 0ull, /*autoPrime=*/true, nu);
+    ccParams.qBits = 59;    // 安全：素数 ≤2^59 < 60 bit 上限
     auto ctx = std::make_shared<MLWEContext>(ccParams);
     MLWEScheme scheme(ctx);  // 仅占位，CC-MM 核不直接用 scheme
 
@@ -320,8 +335,8 @@ static void DemoC_CCMM_MultiScale() {
     std::cout << "  " << std::left << std::setw(12) << "维度 d"
               << std::setw(16) << "CC-MM 总耗时(ms)"
               << std::setw(16) << "CC-MM 总耗时(s)"
-              << "说明\n";
-    std::cout << "  " << std::string(60, '-') << "\n";
+              << "说明\n" << std::flush;
+    std::cout << "  " << std::string(60, '-') << "\n" << std::flush;
 
     // 固定随机源，便于复现。
     std::mt19937_64 rng(20260630);
@@ -357,6 +372,8 @@ static void DemoC_CCMM_MultiScale() {
         }
 
         // 计算 4 个明文核（即 4 次 BLAS dgemm 归约）并计时。
+        // 每个 d 的 4 核计算可能耗时数十秒（d=1024 时流水规范化为 ~数百秒），
+        // 这里不做中途进度打印（避免污染下方的对齐表格），仅于完成后输出一行结果。
         Timer t;
         t.start();
         bchp::CCMMCores cores =
@@ -371,7 +388,7 @@ static void DemoC_CCMM_MultiScale() {
         std::cout << "  " << std::left << std::setw(12) << (std::to_string(d) + "×" + std::to_string(d))
                   << std::setw(16) << std::fixed << std::setprecision(1) << ms
                   << std::setw(16) << std::setprecision(3) << sec
-                  << (ok ? "4 核 dgemm 完成 ✓" : "✗ 核缺失") << "\n";
+                  << (ok ? "4 核 dgemm 完成 ✓" : "✗ 核缺失") << "\n" << std::flush;
 
         // 防止大内存堆积：循环结束自动析构本规模数据。
     }
@@ -438,28 +455,47 @@ static void DemoD_AutomorphismCMT(const MLWEContext& ctx, const MLWEScheme& sche
 //==============================================================================
 // 入口（供 AppDemo.cpp 调用）
 //==============================================================================
-int bchp_demo() {
+int bchp_demo(int mode) {
     bchp_demo_ns::PrintBar("BCHP：论文《Fast Homomorphic Linear Algebra with BLAS》真实实现演示");
 
+    // mode 说明（由 AppDemo.cpp 传入，便于单独验证各演示，避免某演示阻塞影响其余输出）：
+    //   mode=0：全部演示 A/B/C/D（向后兼容旧行为，AppDemo 用 -t 6）；
+    //   mode=1：仅演示 A（矩阵形式 RLWE 加密/解密，AppDemo 用 -t 4）；
+    //   mode=2：除演示 A 外的其余演示 B/C/D（AppDemo 用 -t 5）。
+    std::cout << "  运行模式 mode=" << mode
+              << (mode == 1 ? "（仅演示 A）"
+                  : (mode == 2 ? "（演示 B/C/D）" : "（全部 A/B/C/D）")) << "\n";
+
     try {
-        // 环参数：N=2^14=16384（论文 §6.1 设置），q≈2^60（FirstPrime 自动生成
-        // 满足 q≡1 mod 2N 的 NTT-friendly 素数），k=2，σ=4。
-        // 注意：q 用 useAutoPrime=true 自动生成（usint=uint32_t 装不下 2^60）。
+        // 环参数：N=2^14=16384（论文 §6.1 设置），k=2，σ=4。
+        // 【关键】模数 q 的位数取 59 bit（详见下方注释与 dev-logs 根因分析）：
+        //   OpenFHE 的 NativeInteger 在 NATIVEINT=64 下安全模数上限 MAX_MODULUS_SIZE=60 bit。
+        //   而 FirstPrime(nBits, m) 返回「至少 (nBits+1) 位」的素数——即 FirstPrime(60,…)
+        //   会返回 61 bit 的素数（>2^60），超出 60 bit 安全上限，导致 NTT/Barrett 归约出错，
+        //   解密误差塌缩到 ≈q/2（演示 A 失败）。故这里取 qBits=59，生成的素数 ≤2^59，安全。
         usint N = 1u << 14;          // = 16384
         usint k = 2, nu = 4;
+        usint qBits = 59;            // 安全：生成的素数 ≤2^59 < MAX_MODULUS_SIZE=60
         MLWEParams params(N, k, 0ull, /*autoPrime=*/true, nu);
+        params.qBits = qBits;        // 显式覆盖为 59 bit
         auto ctx = std::make_shared<MLWEContext>(params);
         MLWEScheme scheme(ctx);
 
         std::cout << "  全局参数：N=" << N << ", k=" << k
                   << ", q=" << ctx->GetModulusU64()
                   << " (≈2^" << static_cast<int>(std::log2(
-                       static_cast<double>(ctx->GetModulusU64()))) << ")\n";
+                       static_cast<double>(ctx->GetModulusU64())))
+                  << ", " << qBits << "-bit 素数)\n";
 
-        bchp_demo_ns::DemoA_MatrixRLWE(*ctx, scheme);
-        bchp_demo_ns::DemoB_CPMM_BLAS(*ctx);
-        bchp_demo_ns::DemoC_CCMM_MultiScale();
-        bchp_demo_ns::DemoD_AutomorphismCMT(*ctx, scheme);
+        // 按 mode 选择执行哪些演示。
+        if (mode == 0 || mode == 1) {
+            bchp_demo_ns::DemoA_MatrixRLWE(*ctx, scheme);
+        }
+        if (mode == 0 || mode == 2) {
+            bchp_demo_ns::DemoB_CPMM_BLAS(*ctx);
+            bchp_demo_ns::DemoC_CCMM_MultiScale();
+            bchp_demo_ns::DemoD_AutomorphismCMT(*ctx, scheme);
+        }
     } catch (const std::exception& ex) {
         std::cerr << "\n[错误] " << ex.what() << "\n";
         return 1;

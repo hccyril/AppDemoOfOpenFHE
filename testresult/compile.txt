@@ -1,0 +1,18 @@
+  $ cmake --build build -j
+[4/8] Building CXX object CMakeFiles/AppDemo.dir/src/bchp.cpp.o
+/home/huang/GIT/AppDemoOfOpenFHE/src/bchp.cpp: In function ‘std::vector<lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >, std::allocator<lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > > > > bchp::ModularMatMul_dgemm(const std::vector<lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >, std::allocator<lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > > > >&, const std::vector<lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > >, std::allocator<lbcrypto::PolyImpl<intnat::NativeVectorT<intnat::NativeIntegerT<long unsigned int> > > > >&, Modulus, Modulus, const mlwe::MLWEContext&)’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/bchp.cpp:360:26: warning: ISO C++ does not support ‘__int128’ for ‘prod’ [-Wpedantic]
+  360 |                 unsigned __int128 prod = static_cast<unsigned __int128>(wAq) * wBq % q;
+      |                          ^~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/bchp.cpp:360:63: warning: ISO C++ does not support ‘__int128’ for ‘type name’ [-Wpedantic]
+  360 |                 unsigned __int128 prod = static_cast<unsigned __int128>(wAq) * wBq % q;
+      |                                                               ^~~~~~~~
+[7/8] Building CXX object CMakeFiles/AppDemo.dir/src/bchp_demo.cpp.o
+/home/huang/GIT/AppDemoOfOpenFHE/src/bchp_demo.cpp: In function ‘void bchp_demo_ns::DemoB_CPMM_BLAS(const mlwe::MLWEContext&)’:
+/home/huang/GIT/AppDemoOfOpenFHE/src/bchp_demo.cpp:234:22: warning: ISO C++ does not support ‘__int128’ for ‘acc’ [-Wpedantic]
+  234 |             unsigned __int128 acc = 0;
+      |                      ^~~~~~~~
+/home/huang/GIT/AppDemoOfOpenFHE/src/bchp_demo.cpp:236:45: warning: ISO C++ does not support ‘__int128’ for ‘type name’ [-Wpedantic]
+  236 |                 acc += static_cast<unsigned __int128>(
+      |                                             ^~~~~~~~
+[8/8] Linking CXX executable AppDemo
